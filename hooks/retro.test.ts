@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { isRetroTrigger } from './retro'
 
 test('a phase checkpoint commit triggers the retro', () => {
-  expect(isRetroTrigger('git commit -m "phase(P0): delete clean_unmonitored"', true)).toBe(true)
+  expect(isRetroTrigger('git commit -m "phase(P0): add invoice export"', true)).toBe(true)
 })
 
 test('a successful milestone merge triggers the retro', () => {
@@ -15,5 +15,5 @@ test('a failed merge does not', () => {
 })
 
 test('an ordinary commit does not', () => {
-  expect(isRetroTrigger('git commit -m "fix(api): owners"', true)).toBe(false)
+  expect(isRetroTrigger('git commit -m "fix(api): invoice totals"', true)).toBe(false)
 })

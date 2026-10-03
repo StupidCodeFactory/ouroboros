@@ -6,12 +6,12 @@ test('reads the fenced findings block', () => {
   const agentText = [
     'review done',
     '```json',
-    '{"findings":[{"summary":"slept in drain","root_cause":"skill-misread","skill":"queue-unit-kinds"}]}',
+    '{"findings":[{"summary":"skipped the retry step","root_cause":"skill-misread","skill":"example-domain"}]}',
     '```',
   ].join('\n')
 
   expect(parseFindings(agentText)).toEqual([
-    { summary: 'slept in drain', root_cause: 'skill-misread', skill: 'queue-unit-kinds' },
+    { summary: 'skipped the retry step', root_cause: 'skill-misread', skill: 'example-domain' },
   ])
 })
 

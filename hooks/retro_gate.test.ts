@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const ONE_OPEN_INCIDENT = '.claude/skills/queue-unit-kinds/incidents.md:1\n'
+const ONE_OPEN_INCIDENT = '.claude/skills/example-domain/incidents.md:1\n'
 
 const grepAnswers = (on: On, stdout: string) =>
   on('process.run', () => ({
@@ -21,7 +21,7 @@ test('a phase checkpoint commit starts the skill-curator retro', async ($, on) =
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
 
-  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): owners api"' })
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): add invoice export"' })
 
   expect(spawned).toHaveLength(1)
   expect(spawned[0]).toMatchObject({ subagent_type: 'skill-curator', run_in_background: true })
@@ -36,7 +36,7 @@ test('a failed checkpoint commit starts nothing', async ($, on) => {
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: 'nothing to commit', isError: true }))
 
-  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): owners api"' })
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): add invoice export"' })
 
   expect(spawned).toEqual([])
 })

@@ -3,11 +3,11 @@ import { expect, mock, test } from 'claude-code/testing'
 const FINDINGS_BLOCK = [
   'review done',
   '```json',
-  '{"findings":[{"summary":"slept in drain","root_cause":"skill-misread","skill":"queue-unit-kinds","agent":"implementer"},{"summary":"typo","root_cause":"code-bug"}]}',
+  '{"findings":[{"summary":"skipped the retry step","root_cause":"skill-misread","skill":"example-domain","agent":"implementer"},{"summary":"typo","root_cause":"code-bug"}]}',
   '```',
 ].join('\n')
 
-const SKILL_LOG = '.claude/skills/queue-unit-kinds/incidents.md'
+const SKILL_LOG = '.claude/skills/example-domain/incidents.md'
 
 const agentResult = (text: string) => ({
   agentId: 'agent-1',
@@ -31,7 +31,7 @@ test('a reviewer finding lands as an open incident row in the skill log', async 
   on('process.run', (_, e) => ({
     value: {
       exitCode: 0,
-      stdout: e.argv[0] === 'git' ? 'phase(P2): owners api' : '.claude/skills/queue-unit-kinds/incidents.md:1\n',
+      stdout: e.argv[0] === 'git' ? 'phase(P2): add invoice export' : '.claude/skills/example-domain/incidents.md:1\n',
       stderr: '',
       isStdoutTruncated: false,
       isStderrTruncated: false,
@@ -47,7 +47,7 @@ test('a reviewer finding lands as an open incident row in the skill log', async 
   await $.tool.call({ tool: 'Agent', description: 'review', prompt: 'review it', subagent_type: 'reviewer' })
 
   const log = files.get(SKILL_LOG) ?? ''
-  expect(log).toContain('| 2026-10-03 | P3 | implementer | skill-misread | | slept in drain | : | open | |')
+  expect(log).toContain('| 2026-10-03 | P3 | implementer | skill-misread | | skipped the retry step | : | open | |')
   expect(log).not.toContain('typo')
   expect(statuses).toEqual(['skills: 1 open'])
 })
