@@ -20,7 +20,7 @@ Track every step with the plan's checkboxes per the `checkbox-progress` skill: s
 ## Branch and commits
 
 - One branch per milestone off a fresh `origin/main`, named `<branch_prefix><milestone>-<slug>` with `branch_prefix` from `.claude/ouroboros.json`. No stacked PRs.
-- Each phase ends in one checkpoint commit whose subject starts `phase(PN):`. That commit is the retro trigger.
+- Each phase ends in one checkpoint commit whose subject starts `phase(PN):`. That commit is the retro trigger. Only the phase checkpoint makes it, after every task of the phase is done, reviewed and the full suite is green. A task or fix commit never starts with `phase(`, even for the last task of a phase; use a conventional subject (`feat:`, `fix:`, `refactor:`, `test:`).
 - Work in your own worktree with your own test database; never run two suites against one database.
 
 ## Evidence and merge

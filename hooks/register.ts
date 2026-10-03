@@ -1,7 +1,7 @@
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
-import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf } from './drafts'
+import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { digestedResult, isOversized } from './conductor/digest'
 import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
@@ -22,7 +22,7 @@ import type { InlinedSkill } from './eager_skills/inline'
 import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
-import { IMPLEMENTER_AGENTS, RETRO_PROMPT, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
+import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { stripFrontmatter } from './skill_text'
 
@@ -274,6 +274,13 @@ async function withFiledBrief($: EngineInterface, milestone: string, event: Loop
   const briefPath = await projectPath($, `${BRIEFS_DIR}/${milestone}.md`)
   await $.fs.write(briefPath, event.brief)
   return { ...event, brief_path: briefPath }
+}
+
+async function isPrematureCheckpoint($: EngineInterface, command: string) {
+  const phase = checkpointPhaseOf(command)
+  if (phase === undefined) return false
+  const planText = await activePlanText($)
+  return planText !== undefined && firstUncheckedBox(planText, phase) !== null
 }
 
 async function appendToPlan($: EngineInterface, section: string) {
@@ -629,6 +636,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
+    if (await isPrematureCheckpoint($, e.command)) return ran
 
     await startRetro($)
     if (isPullRequestMerge(e.command)) await askAdrScribe($, ACCEPT_MILESTONE_ADRS)

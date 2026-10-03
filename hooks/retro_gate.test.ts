@@ -20,12 +20,42 @@ test('a phase checkpoint commit starts the skill-curator retro', async ($, on) =
     return { value: undefined }
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  on('fs.exists', () => ({ value: false }))
 
   await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): add invoice export"' })
 
   expect(spawned).toHaveLength(1)
   expect(spawned[0]).toMatchObject({ subagent_type: 'ouroboros:skill-curator', run_in_background: true })
   expect(toasts).toEqual(['retro started'])
+})
+
+const PLAN_WITH_OPEN_P0 = [
+  '### Task 4: delete the clean_unmonitored task (P0)',
+  '- [x] Step 5: commit',
+  '### Task 17: One month-range helper (P0)',
+  '- [ ] Step 1: write the failing spec',
+].join('\n')
+
+test('a phase commit made while that phase still has open plan boxes starts no retro', async ($, on) => {
+  const spawned: object[] = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e)
+    return { model: 'fable', agentId: 'curator-1' }
+  })
+  const files: Record<string, string> = {
+    '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' } }),
+    '.claude/ouroboros.json': JSON.stringify({ drafts_dir: 'docs/drafts' }),
+    'docs/drafts/plans/m1.md': PLAN_WITH_OPEN_P0,
+  }
+  const fileAt = (path: string) => Object.entries(files).find(([name]) => path.endsWith(name))?.[1]
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  grepAnswers(on, '/repo/.git\n')
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P0): delete clean_unmonitored and its rake task"' })
+
+  expect(spawned).toEqual([])
 })
 
 test('a failed checkpoint commit starts nothing', async ($, on) => {

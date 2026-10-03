@@ -86,6 +86,8 @@ const briefText = () => (args.brief_path ? `Architect brief: read ${args.brief_p
 const fixInstruction = blocking =>
   blocking.length ? `Fix these blocking findings:\n${JSON.stringify(blocking)}` : 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
 
+const COMMIT_RULE = '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.'
+
 const RESULT_INSTRUCTION =
   '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
   '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file) and `evidence` (commands run and their decisive output).'
@@ -134,7 +136,7 @@ const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) =
 }
 
 const implementPrompt = (task, blocking) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText()}\n${fixInstruction(blocking)}${RESULT_INSTRUCTION}`
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText()}\n${fixInstruction(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const reviewPrompt = (reviewer, task) =>
   eagerPreamble(`${reviewer}.md`) +
