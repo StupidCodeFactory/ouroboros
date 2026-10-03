@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { followUpSection, needsReview, reviewersForRound, triageFindings } from './phase_review'
+import { checkpointVerdict, followUpSection, needsReview, reviewersForRound, triageFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -115,4 +115,27 @@ test('follow-ups land in the plan as one untagged task of unchecked boxes', () =
     '\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n' +
       '- [ ] Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes. (lib/price_feed/backfill/runner.rb:163, raised by reviewer)\n',
   )
+})
+
+const WITHHELD_CHECKPOINT = {
+  committed: false,
+  sha: '',
+  suite_green: false,
+  evidence: 'I did not make the `phase(P0)` commit. The full ruby test run is red, and about 127 of its 136 failures are a regression caused by a P0 acceptance check, not by anything still waiting on P1.',
+}
+
+test('a checkpoint that withheld its commit escalates with its evidence', () => {
+  expect(checkpointVerdict(WITHHELD_CHECKPOINT)).toEqual({ status: 'escalate', evidence: WITHHELD_CHECKPOINT.evidence })
+})
+
+test('a committed checkpoint on a red suite escalates', () => {
+  expect(checkpointVerdict({ ...WITHHELD_CHECKPOINT, committed: true, sha: '4bdf9749' }).status).toBe('escalate')
+})
+
+test('a committed checkpoint on a green suite is checkpointed', () => {
+  expect(checkpointVerdict({ committed: true, sha: '4bdf9749', suite_green: true, evidence: '1203 examples, 0 failures' })).toEqual({ status: 'checkpointed', evidence: '1203 examples, 0 failures' })
+})
+
+test('a checkpoint agent that returned nothing escalates', () => {
+  expect(checkpointVerdict(null)).toEqual({ status: 'escalate', evidence: 'checkpoint agent returned nothing' })
 })

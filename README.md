@@ -78,6 +78,6 @@ The committed `.claude/ouroboros.json` is configuration, not runtime state; keep
 
 ## Development
 
-Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh`, the plugin tests and `plugin validate`, and refuses the push on any failure.
+Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh`, `scripts/check_workflow_mirrors.mjs` (the workflow scripts cannot import, so their inline copies of the tested phase logic in `hooks/phase_review.ts` must match it), the plugin tests and `plugin validate`, and refuses the push on any failure.
 
 Status: under construction.

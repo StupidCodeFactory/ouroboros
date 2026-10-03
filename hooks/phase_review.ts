@@ -5,14 +5,14 @@ export type Implemented = { changed?: boolean; commits?: string[]; hunks?: Hunk[
 
 export const needsReview = (implemented: Implemented | undefined) => implemented?.changed !== false
 
-const samePath = (left: string, right: string) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
+export const samePath = (left: string, right: string) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
 
-const sameSpot = (left: ReviewFinding, right: ReviewFinding) =>
+export const sameSpot = (left: ReviewFinding, right: ReviewFinding) =>
   left.file !== undefined && right.file !== undefined && samePath(left.file, right.file) && left.line === right.line
 
-const isCoveredBy = (finding: ReviewFinding, kept: ReviewFinding[]) => kept.some(keptFinding => sameSpot(finding, keptFinding))
+export const isCoveredBy = (finding: ReviewFinding, kept: ReviewFinding[]) => kept.some(keptFinding => sameSpot(finding, keptFinding))
 
-const reviewersOwningEachFinding = <R extends Reviewer>(reviewers: R[], blocking: ReviewFinding[]) => {
+export const reviewersOwningEachFinding = <R extends Reviewer>(reviewers: R[], blocking: ReviewFinding[]) => {
   const kept: ReviewFinding[] = []
   return reviewers.filter(reviewer => {
     const fresh = blocking.filter(finding => finding.reviewer === reviewer.agent && !isCoveredBy(finding, kept))
@@ -21,7 +21,7 @@ const reviewersOwningEachFinding = <R extends Reviewer>(reviewers: R[], blocking
   })
 }
 
-const touchesOtherFiles = (fix: Hunk[], blocking: ReviewFinding[]) =>
+export const touchesOtherFiles = (fix: Hunk[], blocking: ReviewFinding[]) =>
   fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
 
 export const reviewersForRound = <R extends Reviewer>(round: number, maxRounds: number, reviewers: R[], previousBlocking: ReviewFinding[], fix: Hunk[]): R[] => {
@@ -31,7 +31,7 @@ export const reviewersForRound = <R extends Reviewer>(round: number, maxRounds: 
   return owners.length === 0 ? reviewers : owners
 }
 
-const isInDiff = (finding: ReviewFinding, diff: Hunk[]) =>
+export const isInDiff = (finding: ReviewFinding, diff: Hunk[]) =>
   diff.some(hunk => finding.file !== undefined && finding.line !== undefined && samePath(hunk.file, finding.file) && finding.line >= hunk.start && finding.line <= hunk.end)
 
 export const triageFindings = (findings: ReviewFinding[], diff: Hunk[]) => {
@@ -60,4 +60,12 @@ export const phaseFollowUps = (json: Record<string, unknown> | undefined) => {
   if (!Array.isArray(json?.tasks)) return ''
   const phase = typeof json.phase === 'string' ? json.phase : ''
   return (json.tasks as PhaseTaskResult[]).map(task => taskFollowUps(phase, task)).join('')
+}
+
+export type Checkpoint = { committed: boolean; sha: string; suite_green: boolean; evidence: string }
+
+export const checkpointVerdict = (checkpoint: Checkpoint | null) => {
+  if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
+  const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
+  return { status, evidence: checkpoint.evidence }
 }

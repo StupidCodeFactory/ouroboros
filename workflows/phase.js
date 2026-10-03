@@ -50,6 +50,17 @@ const IMPLEMENT_SCHEMA = {
   required: ['changed', 'commits', 'hunks', 'evidence'],
 }
 
+const CHECKPOINT_SCHEMA = {
+  type: 'object',
+  properties: {
+    committed: { type: 'boolean' },
+    sha: { type: 'string' },
+    suite_green: { type: 'boolean' },
+    evidence: { type: 'string' },
+  },
+  required: ['committed', 'sha', 'suite_green', 'evidence'],
+}
+
 const MAX_FIX_ROUNDS = 3
 const REVIEWERS = [
   { agent: 'reviewer', stage: 'review' },
@@ -79,7 +90,7 @@ const RESULT_INSTRUCTION =
   '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
   '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file) and `evidence` (commands run and their decisive output).'
 
-const needsReview = implemented => !implemented || implemented.changed !== false
+const needsReview = (implemented) => implemented?.changed !== false
 
 const samePath = (left, right) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
 
@@ -107,6 +118,12 @@ const triageFindings = (findings, diff) => {
     blocking: raised.filter(finding => isInDiff(finding, diff)),
     followUps: raised.filter(finding => !isInDiff(finding, diff)),
   }
+}
+
+const checkpointVerdict = (checkpoint) => {
+  if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
+  const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
+  return { status, evidence: checkpoint.evidence }
 }
 
 const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
@@ -175,11 +192,13 @@ const runTask = async task => {
 const checkpointPrompt = () =>
   `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `of every lane in .claude/ouroboros.json${args.lane ? ` (at least lane ${args.lane})` : ''}. ` +
-  `Then commit with subject "phase(${args.phase}): <summary>". Return the evidence.`
+  `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
+  'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output).'
 
 const checkpoint = () =>
   agent(checkpointPrompt(), {
     agentType: ouroborosAgent('auditor'),
+    schema: CHECKPOINT_SCHEMA,
     phase: 'Checkpoint',
     effort: stageEffort(args.effort, 'checkpoint'),
   })
@@ -195,5 +214,5 @@ if (taskResults.some(result => result.status === 'escalate')) {
 }
 
 phase('Checkpoint')
-const evidence = await checkpoint()
-return { status: 'checkpointed', phase: args.phase, tasks: taskResults, evidence }
+const verdict = checkpointVerdict(await checkpoint())
+return { status: verdict.status, phase: args.phase, tasks: taskResults, evidence: verdict.evidence }
