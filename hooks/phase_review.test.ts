@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { needsReview, reviewersForRound } from './phase_review'
+import { followUpSection, needsReview, reviewersForRound, triageFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -77,4 +77,42 @@ test('blocking findings nobody owns bring every reviewer back rather than none',
   const unowned = [{ ...SINGLETON_FINDING, reviewer: undefined }]
   const fix = [{ file: 'lib/price_feed/gap_source_planner.rb', start: 15, end: 22 }]
   expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, unowned, fix))).toEqual(['reviewer', 'architect', 'auditor'])
+})
+
+const TASK_3_DIFF = [
+  { file: 'lib/price_feed/gap_source_planner.rb', start: 12, end: 31 },
+  { file: 'lib/price_feed/backfill/dashboard_client.rb', start: 1, end: 14 },
+]
+
+const UNTOUCHED_CALLERS = {
+  reviewer: 'reviewer',
+  file: 'lib/price_feed/backfill/runner.rb',
+  line: 163,
+  summary: 'Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes.',
+  root_cause: 'code-bug',
+  blocking: true,
+}
+
+test('a blocking finding inside the task diff blocks', () => {
+  expect(triageFindings([SINGLETON_FINDING], TASK_3_DIFF)).toEqual({ blocking: [SINGLETON_FINDING], followUps: [] })
+})
+
+test('a blocking finding on code outside the task diff becomes a follow-up and blocks nothing', () => {
+  expect(triageFindings([UNTOUCHED_CALLERS], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [UNTOUCHED_CALLERS] })
+})
+
+test('a blocking finding without a file and line cannot be placed in the diff, so it is a follow-up', () => {
+  const planDrift = { reviewer: 'auditor', summary: 'Plan Task 4 is stale: its Files list still says Create: spec/guards/dangerous_tasks_spec.rb.', blocking: true }
+  expect(triageFindings([planDrift], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [planDrift] })
+})
+
+test('a non-blocking finding is neither', () => {
+  expect(triageFindings([{ ...UNTOUCHED_CALLERS, blocking: false }], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [] })
+})
+
+test('follow-ups land in the plan as one untagged task of unchecked boxes', () => {
+  expect(followUpSection('P0', '3', [UNTOUCHED_CALLERS])).toBe(
+    '\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n' +
+      '- [ ] Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes. (lib/price_feed/backfill/runner.rb:163, raised by reviewer)\n',
+  )
 })

@@ -23,7 +23,7 @@ const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []
   on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
   on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
   on('fs.write', (_, e) => {
-    disk.set(e.path.slice(e.path.indexOf('.claude/')), e.text)
+    disk.set(e.path.includes('.claude/') ? e.path.slice(e.path.indexOf('.claude/')) : e.path, e.text)
     return { value: undefined }
   })
   on('ui.toast', () => ({ value: undefined }))
@@ -262,6 +262,26 @@ test('a checkpointed phase notification is filed, starts the retro and is consum
   expect(disk.get('.claude/ouroboros/results/wf-1.json')).toContain('checkpointed')
   expect(spawned).toHaveLength(1)
   expect(stateOn(disk)).toMatchObject({ status: 'retro', results: { P0: '.claude/ouroboros/results/wf-1.json' }, run: { workflow: 'retro' } })
+})
+
+test('follow-ups a phase raised outside a task diff are appended to the plan as unchecked boxes', async ($, on) => {
+  const outputFile = '/tmp/tasks/wf-1.output'
+  const followUp = { reviewer: 'reviewer', file: 'lib/price_feed/backfill/runner.rb', line: 163, summary: 'Untouched callers still reach the singleton through .instance.', blocking: true }
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '3', status: 'done', follow_ups: [followUp] }] } })
+  const disk = worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': phaseInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [outputFile]: output,
+  })
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-notification>\n<task-id>wf-1</task-id>\n<output-file>${outputFile}</output-file>\n<status>completed</status>\n</task-notification>` })
+
+  expect(disk.get('/repo/docs/drafts/plans/m1.md')).toBe(
+    `${PLAN}\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n- [ ] Untouched callers still reach the singleton through .instance. (lib/price_feed/backfill/runner.rb:163, raised by reviewer)\n`,
+  )
+  expect(stateOn(disk)).toMatchObject({ status: 'retro' })
 })
 
 test('an escalating phase notification reaches the main session as one line', async ($, on) => {

@@ -14,6 +14,7 @@ import type { Action } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
+import { phaseFollowUps } from './phase_review'
 import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneOf, workflowSeats } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
@@ -267,6 +268,14 @@ async function runConductorCommand($: EngineInterface, args: string) {
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'
 }
 
+async function appendToPlan($: EngineInterface, section: string) {
+  const drafts = await activeDrafts($)
+  if (section === '' || drafts === null) return
+  const path = await draftsPath($, drafts.plan)
+  if (!(await $.fs.exists(path))) return
+  await $.fs.write(path, (await $.fs.read(path)) + section)
+}
+
 async function workflowOutputText($: EngineInterface, notificationText: string) {
   const outputFile = outputFileOf(notificationText)
   if (outputFile === undefined || !(await $.fs.exists(outputFile))) return undefined
@@ -279,6 +288,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
+  if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
   const event = loopEventOf(text, resultPath, run, state.current, json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
 }

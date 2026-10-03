@@ -96,6 +96,17 @@ const reviewersOwningEachFinding = (reviewers, blocking) => {
 
 const touchesOtherFiles = (fix, blocking) => fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
 
+const isInDiff = (finding, diff) =>
+  diff.some(hunk => finding.file !== undefined && finding.line !== undefined && samePath(hunk.file, finding.file) && finding.line >= hunk.start && finding.line <= hunk.end)
+
+const triageFindings = (findings, diff) => {
+  const raised = findings.filter(finding => finding.blocking)
+  return {
+    blocking: raised.filter(finding => isInDiff(finding, diff)),
+    followUps: raised.filter(finding => !isInDiff(finding, diff)),
+  }
+}
+
 const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
   if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
   if (touchesOtherFiles(fix, previousBlocking)) return reviewers
@@ -109,7 +120,8 @@ const implementPrompt = (task, blocking) =>
 const reviewPrompt = (reviewer, task) =>
   eagerPreamble(`${reviewer}.md`) +
   `Review the diff for ${args.phase} task ${task.id} (${task.title}) on the current branch as the ${reviewer}. ` +
-  'Return every finding with its root cause; mark blocking ones.'
+  'Return every finding with its root cause; mark blocking ones. A finding blocks only when its file and line fall inside this task\'s diff; ' +
+  'anything about code outside it is recorded as a follow-up in the plan and never blocks.'
 
 const implementStage = blocking => (blocking.length ? 'fix' : 'implement')
 
@@ -141,16 +153,21 @@ const reviewTask = async (task, reviewers) => {
 const runTask = async task => {
   let blocking = []
   const allFindings = []
+  const followUps = []
+  const diff = []
   for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
     const implemented = await implement(task, blocking, round)
-    if (round === 1 && !needsReview(implemented)) return { id: task.id, status: 'verified', rounds: 1, evidence: implemented.evidence, findings: [] }
+    if (round === 1 && !needsReview(implemented)) return { id: task.id, status: 'verified', rounds: 1, evidence: implemented.evidence, findings: [], follow_ups: [] }
     const fix = implemented && implemented.hunks ? implemented.hunks : []
+    diff.push(...fix)
     const findings = await reviewTask(task, reviewersForRound(round, MAX_FIX_ROUNDS, REVIEWERS, blocking, fix))
     allFindings.push(...findings)
-    blocking = findings.filter(finding => finding.blocking)
-    if (!blocking.length) return { id: task.id, status: 'done', rounds: round, findings: allFindings }
+    const triaged = triageFindings(findings, diff)
+    followUps.push(...triaged.followUps)
+    blocking = triaged.blocking
+    if (!blocking.length) return { id: task.id, status: 'done', rounds: round, findings: allFindings, follow_ups: followUps }
   }
-  return { id: task.id, status: 'escalate', rounds: MAX_FIX_ROUNDS, findings: allFindings }
+  return { id: task.id, status: 'escalate', rounds: MAX_FIX_ROUNDS, findings: allFindings, follow_ups: followUps }
 }
 
 const checkpointPrompt = () =>

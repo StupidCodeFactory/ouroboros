@@ -30,3 +30,34 @@ export const reviewersForRound = <R extends Reviewer>(round: number, maxRounds: 
   const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
   return owners.length === 0 ? reviewers : owners
 }
+
+const isInDiff = (finding: ReviewFinding, diff: Hunk[]) =>
+  diff.some(hunk => finding.file !== undefined && finding.line !== undefined && samePath(hunk.file, finding.file) && finding.line >= hunk.start && finding.line <= hunk.end)
+
+export const triageFindings = (findings: ReviewFinding[], diff: Hunk[]) => {
+  const raised = findings.filter(finding => finding.blocking)
+  return {
+    blocking: raised.filter(finding => isInDiff(finding, diff)),
+    followUps: raised.filter(finding => !isInDiff(finding, diff)),
+  }
+}
+
+const locationOf = (finding: ReviewFinding) => (finding.file === undefined ? '' : `${finding.file}${finding.line === undefined ? '' : `:${finding.line}`}, `)
+
+const followUpBox = (finding: ReviewFinding) => `- [ ] ${finding.summary} (${locationOf(finding)}raised by ${finding.reviewer ?? 'review'})\n`
+
+export const followUpSection = (phase: string, taskId: string, followUps: ReviewFinding[]) =>
+  `\n### Task ${taskId}-follow-ups: follow-ups raised while reviewing ${phase} task ${taskId}\n${followUps.map(followUpBox).join('')}`
+
+type PhaseTaskResult = { id?: unknown; follow_ups?: unknown }
+
+const taskFollowUps = (phase: string, task: PhaseTaskResult) => {
+  if (!Array.isArray(task.follow_ups) || task.follow_ups.length === 0) return ''
+  return followUpSection(phase, String(task.id), task.follow_ups as ReviewFinding[])
+}
+
+export const phaseFollowUps = (json: Record<string, unknown> | undefined) => {
+  if (!Array.isArray(json?.tasks)) return ''
+  const phase = typeof json.phase === 'string' ? json.phase : ''
+  return (json.tasks as PhaseTaskResult[]).map(task => taskFollowUps(phase, task)).join('')
+}
