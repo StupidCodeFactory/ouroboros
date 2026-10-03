@@ -22,8 +22,8 @@ const briefArg = (state: LoopState) => {
   return { brief: state.brief ?? '' }
 }
 
-const withTouches = (task: PhaseTask, touches: LoopState['touches']) => {
-  const files = touches?.[task.id]
+const withTouches = (task: PhaseTask, touches: LoopState['touches'], lanes: LaneOwnership) => {
+  const files = touches?.[task.id] ?? (task.lane === undefined ? undefined : lanes[task.lane])
   return files === undefined ? task : { ...task, touches: files }
 }
 
@@ -35,7 +35,7 @@ const withLane = <T extends PhaseTask & { touches?: string[] }>(task: T, lanes: 
 const phaseArgs = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership) => {
   const base = { milestone: state.milestone, phase, ...briefArg(state) }
   if (planText === undefined) return base
-  return { ...base, tasks: phaseTasks(planText, phase).map(task => withLane(withTouches(task, state.touches), lanes)) }
+  return { ...base, tasks: phaseTasks(planText, phase).map(task => withLane(withTouches(task, state.touches, lanes), lanes)) }
 }
 
 export const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership = {}): Launch => ({

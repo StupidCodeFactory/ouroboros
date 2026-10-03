@@ -168,9 +168,18 @@ const triagePhaseFindings = (findings, diffs) => {
   }
 }
 
+const staticPrefix = (path) => path.split('*')[0] ?? path
+
+const pathsOverlap = (left, right) => {
+  if (!left.includes('*') && !right.includes('*')) return samePath(left, right)
+  const leftPrefix = staticPrefix(left)
+  const rightPrefix = staticPrefix(right)
+  return leftPrefix.startsWith(rightPrefix) || rightPrefix.startsWith(leftPrefix)
+}
+
 const overlaps = (left, right) => {
   if (left.touches === undefined || right.touches === undefined) return true
-  return left.touches.some(file => (right.touches ?? []).some(other => samePath(file, other)))
+  return left.touches.some(file => (right.touches ?? []).some(other => pathsOverlap(file, other)))
 }
 
 const waveIndexes = (tasks) => {

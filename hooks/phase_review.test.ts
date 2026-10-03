@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -200,4 +200,19 @@ test('one line three reviewers flagged reaches the fix agent once', () => {
   const sameLine = ['reviewer', 'architect', 'auditor'].map(reviewer => ({ ...SINGLETON_FINDING, reviewer, task: '3' }))
   const other = { ...SINGLETON_FINDING, line: 27, reviewer: 'auditor', task: '3' }
   expect(distinctFindings([...sameLine, other])).toEqual([sameLine[0], other])
+})
+
+test('a lane glob overlaps the files and globs under it and nothing outside it', () => {
+  expect(pathsOverlap('lib/**', 'lib/shop/a.rb')).toBe(true)
+  expect(pathsOverlap('lib/shop/a.rb', 'lib/**')).toBe(true)
+  expect(pathsOverlap('lib/**', 'lib/shop/**')).toBe(true)
+  expect(pathsOverlap('lib/**', 'services/**')).toBe(false)
+  expect(pathsOverlap('lib/**', 'spec/lib/a_spec.rb')).toBe(false)
+  expect(pathsOverlap('lib/a.rb', '/repo/lib/a.rb')).toBe(true)
+})
+
+test('tasks owning different lanes share a wave, two tasks of one lane do not', () => {
+  const ruby = (id: string) => ({ id, title: id, touches: ['lib/**', 'spec/**'] })
+  const python = { id: 'p', title: 'p', touches: ['services/**'] }
+  expect(idsOf(taskWaves([ruby('a'), python, ruby('b')]))).toEqual([['a', 'p'], ['b']])
 })

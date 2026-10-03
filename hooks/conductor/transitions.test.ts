@@ -48,6 +48,12 @@ test('each phase task carries its lane, so one phase run mixes ruby and python t
   expect((launch?.args as { tasks: Array<{ id: string; lane?: string }> }).tasks.map(task => [task.id, task.lane])).toEqual([['7', 'ruby'], ['19', 'python']])
 })
 
+test('a lane-tagged task without brief touches is given its lane\'s owned paths, so the phase can still place it in a wave', () => {
+  const plan = ['### Task 7: Owners API (P0, ruby)', '- [ ] Step 1', '### Task 19: contract test (P0, python)', '- [ ] Step 1'].join('\n')
+  const { launch } = nextAction({ ...base, current: null, status: 'kickoff' as const, brief_dir: '/b' }, { type: 'kickoff-done', brief: '' }, plan, { ruby: ['lib/**'], python: ['services/**'] })
+  expect((launch?.args as { tasks: Array<{ id: string; touches?: string[] }> }).tasks.map(task => [task.id, task.touches])).toEqual([['7', ['lib/**']], ['19', ['services/**']]])
+})
+
 test('an escalated phase still starts the retro, so its incidents never strand the implementers', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'escalate', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('escalated')
