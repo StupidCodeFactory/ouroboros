@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parseFindings, phaseIncidents } from './findings'
+import { parseFindings, resultIncidents } from './findings'
 import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 
 test('reads the fenced findings block', () => {
@@ -119,7 +119,7 @@ const P0_RESULT = {
 }
 
 test('a phase result yields every process finding once, owned or not, never code bugs', () => {
-  expect(phaseIncidents(P0_RESULT).map(finding => finding.summary)).toEqual([
+  expect(resultIncidents(P0_RESULT).map(finding => finding.summary)).toEqual([
     P0_ARCHITECT_PLANNING_GAP.summary,
     P0_AUDITOR_INVARIANT_GAP.summary,
     P0_AUDITOR_STALE_MEMORY.summary,
@@ -129,10 +129,10 @@ test('a phase result yields every process finding once, owned or not, never code
 
 test('a workflow result\'s own findings count as well as its tasks\'', () => {
   const kickoff = { brief: 'b', findings: [P0_AUDITOR_STALE_MEMORY, P0_CODE_BUG] }
-  expect(phaseIncidents(kickoff).map(finding => finding.summary)).toEqual([P0_AUDITOR_STALE_MEMORY.summary])
+  expect(resultIncidents(kickoff).map(finding => finding.summary)).toEqual([P0_AUDITOR_STALE_MEMORY.summary])
 })
 
 test('a result without tasks yields nothing', () => {
-  expect(phaseIncidents(undefined)).toEqual([])
-  expect(phaseIncidents({ status: 'escalate' })).toEqual([])
+  expect(resultIncidents(undefined)).toEqual([])
+  expect(resultIncidents({ status: 'escalate' })).toEqual([])
 })

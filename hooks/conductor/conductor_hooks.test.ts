@@ -218,6 +218,23 @@ test('the real kickoff notification reads the full result from its output file a
   expect(disk.get('.claude/ouroboros/results/wpsy5r9zt.json')).toContain('"red":true')
 })
 
+test('a kickoff result\'s process findings are filed as incidents like a phase\'s', async ($, on) => {
+  const outputFile = '/tmp/tasks/kickoff-findings.output'
+  const brief = { common: 'c', tasks: [] }
+  const finding = { root_cause: 'skill-misread', skill: 'pipeline-invariants', summary: 'the planner read the invariants skill as optional' }
+  const disk = worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': kickoffInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [outputFile]: JSON.stringify({ result: { brief, decisions: [], phases: ['P0', 'P1'], checks: [], red: true, findings: [finding] } }),
+  })
+  mock.clock(on, { now: Date.UTC(2026, 9, 3) })
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-notification>\n<task-id>wpsy5r9zt</task-id>\n<output-file>${outputFile}</output-file>\n</task-notification>` })
+
+  expect(disk.get('.claude/skills/pipeline-invariants/incidents.md')).toContain('the planner read the invariants skill as optional')
+})
+
 test('a sliced kickoff brief is filed per task and the phase gets the directory and each task\'s touches', async ($, on) => {
   const outputFile = '/tmp/tasks/sliced.output'
   const brief = { common: 'Forbidden: new .instance callers.', tasks: [{ id: '1', guidance: 'Put it in lib/a.rb.', touches: ['lib/a.rb'] }] }

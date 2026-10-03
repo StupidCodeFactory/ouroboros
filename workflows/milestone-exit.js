@@ -9,18 +9,38 @@ const stageEffort = (effortByStage, stage) => {
   return effortByStage[stage]
 }
 
+const PROCESS_FINDINGS = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      root_cause: { type: 'string', enum: ['skill-gap', 'skill-misread', 'skill-misuse', 'agent-behaviour'] },
+      skill: { type: 'string' },
+      agent: { type: 'string' },
+    },
+    required: ['summary', 'root_cause'],
+  },
+}
+
+const PROCESS_FINDINGS_RULE =
+  'Under `findings`, report only what a skill or agent definition got wrong or left out (root_cause, the skill or agent, summary); leave it empty otherwise. '
+
+const findingsOf = (...results) => results.flatMap(result => (result && result.findings) || [])
+
 const CHECKS_SCHEMA = {
   type: 'object',
   properties: {
     checks_green: { type: 'boolean' },
     evidence: { type: 'string' },
+    findings: PROCESS_FINDINGS,
   },
   required: ['checks_green', 'evidence'],
 }
 
 const PR_SCHEMA = {
   type: 'object',
-  properties: { pr_url: { type: 'string' } },
+  properties: { pr_url: { type: 'string' }, findings: PROCESS_FINDINGS },
   required: ['pr_url'],
 }
 
@@ -29,6 +49,7 @@ const MERGE_SCHEMA = {
   properties: {
     merged: { type: 'boolean' },
     failing_gate: { type: 'string' },
+    findings: PROCESS_FINDINGS,
   },
   required: ['merged'],
 }
@@ -43,21 +64,26 @@ const branchName = () => args.branch ?? 'the current branch'
 const checksPrompt = () =>
   eagerPreamble('auditor.md') +
   `Milestone ${args.milestone} exit on ${branchName()}. Run every milestone check and every lane's full test and lint commands from .claude/ouroboros.json. ` +
-  'Return whether all are green and the evidence (commands and their output tails).'
+  'Return whether all are green and the evidence (commands and their output tails). ' +
+  PROCESS_FINDINGS_RULE
 
 const pullRequestPrompt = evidence =>
   eagerPreamble('implementer.md') +
   `Milestone ${args.milestone}: push ${branchName()} and open the pull request against the default branch, ` +
   `following the repository's branch and PR conventions in .claude/ouroboros.json. Put this evidence in the description:\n${evidence}\n` +
-  'Every phase PR has normally merged already: when the branch has nothing ahead of the default branch, open no PR and return the url of the last merged phase PR. Return the PR url.'
+  'Every phase PR has normally merged already: when the branch has nothing ahead of the default branch, open no PR and return the url of the last merged phase PR. Return the PR url. ' +
+  PROCESS_FINDINGS_RULE
 
 const mergePrompt = prUrl =>
   eagerPreamble('architect.md') +
   `Milestone ${args.milestone}: final review of ${prUrl}. Check every gate: milestone checks green, CI green, no open incidents, ` +
   'every plan box for this milestone ticked, decisions recorded. When the PR is already merged, return merged true. ' +
-  'Otherwise merge only if every gate passes, with `gh pr merge <number> --merge`; else name the failing gate and leave it open.'
+  'Otherwise merge only if every gate passes, with `gh pr merge <number> --merge`; else name the failing gate and leave it open. ' +
+  PROCESS_FINDINGS_RULE
 
-const refused = (evidence, prUrl, failingGate) => ({ checks_green: prUrl !== '', evidence, pr_url: prUrl, merged: false, failing_gate: failingGate })
+const reports = []
+
+const refused = (evidence, prUrl, failingGate) => ({ checks_green: prUrl !== '', evidence, pr_url: prUrl, merged: false, failing_gate: failingGate, findings: findingsOf(...reports) })
 
 phase('Checks')
 const audited = await agent(checksPrompt(), {
@@ -66,6 +92,7 @@ const audited = await agent(checksPrompt(), {
   phase: 'Checks',
   effort: stageEffort(args.effort, 'audit'),
 })
+reports.push(audited)
 if (!audited) return refused('', '', 'auditor returned nothing')
 if (!audited.checks_green) return refused(audited.evidence, '', 'milestone checks red')
 
@@ -76,9 +103,10 @@ const opened = await agent(pullRequestPrompt(audited.evidence), {
   phase: 'Pull request',
   effort: stageEffort(args.effort, 'merge'),
 })
+reports.push(opened)
 if (!opened) return refused(audited.evidence, '', 'pull request not opened')
 
-if (args.merge_policy !== 'architect') return { checks_green: true, evidence: audited.evidence, pr_url: opened.pr_url, merged: false, failing_gate: `waiting for the user to merge ${opened.pr_url}` }
+if (args.merge_policy !== 'architect') return { checks_green: true, evidence: audited.evidence, pr_url: opened.pr_url, merged: false, failing_gate: `waiting for the user to merge ${opened.pr_url}`, findings: findingsOf(...reports) }
 
 phase('Merge')
 const reviewed = await agent(mergePrompt(opened.pr_url), {
@@ -87,6 +115,7 @@ const reviewed = await agent(mergePrompt(opened.pr_url), {
   phase: 'Merge',
   effort: stageEffort(args.effort, 'architect_review'),
 })
+reports.push(reviewed)
 if (!reviewed) return refused(audited.evidence, opened.pr_url, 'architect returned nothing')
 
-return { checks_green: true, evidence: audited.evidence, pr_url: opened.pr_url, merged: reviewed.merged, failing_gate: reviewed.failing_gate }
+return { checks_green: true, evidence: audited.evidence, pr_url: opened.pr_url, merged: reviewed.merged, failing_gate: reviewed.failing_gate, findings: findingsOf(...reports) }

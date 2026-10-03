@@ -17,7 +17,7 @@ import type { Repair } from './conductor/repair'
 import type { Evidence } from './conductor/reconcile'
 import { mergeAccepted, nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
-import { isProcessIncident, parseFindings, phaseIncidents } from './findings'
+import { isProcessIncident, parseFindings, resultIncidents } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 import type { IncidentPlaces } from './incident_log'
@@ -389,7 +389,7 @@ async function collect($: EngineInterface, state: LoopState, outputFile: string)
     return [`collected ${taskId}`, note].filter(Boolean).join(': ')
   }
   const json = workflowResultOf(await $.fs.read(outputFile))
-  const incidents = phaseIncidents(json)
+  const incidents = resultIncidents(json)
   await fileIncidents($, incidents, resultPhase(json, state))
   return `${taskId} is not the run in flight: filed its ${plural(incidents.length, 'incident')}, state unchanged`
 }
@@ -459,7 +459,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
-  if (bareName(run.workflow) === 'phase') await fileIncidents($, phaseIncidents(json), resultPhase(json, state))
+  await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
   const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)))
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }

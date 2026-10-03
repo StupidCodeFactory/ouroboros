@@ -49,7 +49,7 @@ const taskFindings = (json: Record<string, unknown> | undefined): RawFinding[] =
 
 const ownFindings = (json: Record<string, unknown> | undefined): RawFinding[] => (Array.isArray(json?.findings) ? (json.findings as RawFinding[]) : [])
 
-export const phaseIncidents = (json: Record<string, unknown> | undefined): Finding[] => {
+export const resultIncidents = (json: Record<string, unknown> | undefined): Finding[] => {
   const incidents = [...ownFindings(json), ...taskFindings(json)].flatMap(raw => asIncident(raw) ?? [])
   return incidents.filter((finding, position) => incidents.findIndex(other => incidentKey(other) === incidentKey(finding)) === position)
 }

@@ -9,6 +9,25 @@ const stageEffort = (effortByStage, stage) => {
   return effortByStage[stage]
 }
 
+const PROCESS_FINDINGS = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      root_cause: { type: 'string', enum: ['skill-gap', 'skill-misread', 'skill-misuse', 'agent-behaviour'] },
+      skill: { type: 'string' },
+      agent: { type: 'string' },
+    },
+    required: ['summary', 'root_cause'],
+  },
+}
+
+const PROCESS_FINDINGS_RULE =
+  'Under `findings`, report only what a skill or agent definition got wrong or left out (root_cause, the skill or agent, summary); leave it empty otherwise. '
+
+const findingsOf = (...results) => results.flatMap(result => (result && result.findings) || [])
+
 const TASK_SLICES = {
   type: 'array',
   items: {
@@ -27,6 +46,7 @@ const BRIEF_SCHEMA = {
       required: ['common', 'tasks'],
     },
     decisions: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, rationale: { type: 'string' } }, required: ['title'] } },
+    findings: PROCESS_FINDINGS,
   },
   required: ['brief', 'decisions'],
 }
@@ -37,6 +57,7 @@ const PLAN_SCHEMA = {
     phases: { type: 'array', items: { type: 'string' } },
     tasks_added: { type: 'number' },
     tasks: TASK_SLICES,
+    findings: PROCESS_FINDINGS,
   },
   required: ['phases', 'tasks_added', 'tasks'],
 }
@@ -46,6 +67,7 @@ const CHECKS_SCHEMA = {
   properties: {
     checks: { type: 'array', items: { type: 'string' } },
     red: { type: 'boolean' },
+    findings: PROCESS_FINDINGS,
   },
   required: ['checks', 'red'],
 }
@@ -69,7 +91,8 @@ const briefPrompt = () =>
   'Write the design brief for this milestone in two parts. `brief.common`: what every task shares, the forbidden list, the review gates, ' +
   'the constraints and seams, what must not change. `brief.tasks`: one entry per plan task (its `### Task <id>` id) with `guidance` ' +
   '(where its code goes, what to reuse) and `touches` (every repository-relative file it will create, change or delete). ' +
-  'List every architectural decision the milestone commits to as `decisions`, each with its rationale.'
+  'List every architectural decision the milestone commits to as `decisions`, each with its rationale. ' +
+  PROCESS_FINDINGS_RULE
 
 const briefText = brief => [brief.common, ...brief.tasks.map(task => `Task ${task.id}: ${task.guidance} Touches: ${task.touches.join(', ')}`)].join('\n')
 
@@ -80,14 +103,16 @@ const planPrompt = brief =>
   'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. ' +
   `Keep the existing parts untouched. ${TEST_NAMING}Architect brief:\n${brief}\n` +
   'Return the phases you tagged in order, how many tasks you added, and for each added task its brief slice in `tasks`: ' +
-  '`guidance` (where its code goes, what to reuse) and `touches` (every repository-relative file it will create, change or delete).'
+  '`guidance` (where its code goes, what to reuse) and `touches` (every repository-relative file it will create, change or delete). ' +
+  PROCESS_FINDINGS_RULE
 
 const checksPrompt = brief =>
   eagerPreamble('auditor.md') +
   `Milestone ${args.milestone}. From the spec ${draftReference(args.spec)} and this brief:\n${brief}\n` +
   'Write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
   TEST_NAMING +
-  'Return the check names and whether they are all red.'
+  'Return the check names and whether they are all red. ' +
+  PROCESS_FINDINGS_RULE
 
 phase('Brief')
 const briefed = await agent(briefPrompt(), {
@@ -122,4 +147,5 @@ return {
   phases: planned ? planned.phases : [],
   checks: audited ? audited.checks : [],
   red: audited ? audited.red : false,
+  findings: findingsOf(briefed, planned, audited),
 }
