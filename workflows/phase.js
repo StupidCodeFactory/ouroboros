@@ -112,7 +112,9 @@ const briefText = task => {
   return `Architect brief:\n${args.brief}`
 }
 
-const COMMIT_RULE = '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.'
+const COMMIT_RULE =
+  '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
+  '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
 
 const RESULT_INSTRUCTION =
   '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
