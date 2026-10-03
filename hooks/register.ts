@@ -12,6 +12,8 @@ import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
 import { reconcilePending } from './conductor/reconcile'
+import { adoptRun, positionLine, setPosition } from './conductor/repair'
+import type { Repair } from './conductor/repair'
 import type { Evidence } from './conductor/reconcile'
 import { nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
@@ -45,7 +47,7 @@ const EAGER_DIR = '.claude/ouroboros/eager'
 const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal]',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status>',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -293,6 +295,24 @@ async function kickoff($: EngineInterface, args: string) {
   return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
 }
 
+async function repaired($: EngineInterface, before: LoopState, repair: Repair) {
+  if ('error' in repair) return repair.error
+  await writeLoopState($, repair.state)
+  return `before: ${positionLine(before)}\nafter:  ${positionLine(repair.state)}`
+}
+
+const words = (text: string) => text.split(/\s+/).filter(Boolean)
+
+async function adopt($: EngineInterface, state: LoopState, args: string) {
+  const [taskId = '', workflow = '', phase] = words(args)
+  return repaired($, state, adoptRun(state, taskId, workflow, phase))
+}
+
+async function setField($: EngineInterface, state: LoopState, args: string) {
+  const [field = '', value = ''] = words(args)
+  return repaired($, state, setPosition(state, field, value))
+}
+
 async function runConductorCommand($: EngineInterface, args: string) {
   const { head, rest } = splitFirstWord(args)
   const state = await readLoopState($)
@@ -300,6 +320,8 @@ async function runConductorCommand($: EngineInterface, args: string) {
   if (head === 'escalations') return escalationsText(state)
   if (head === 'resume') return resumeLoop($, state)
   if (head === 'kickoff') return kickoff($, rest)
+  if (head === 'adopt') return adopt($, state, rest)
+  if (head === 'set') return setField($, state, rest)
   if (head !== 'pause') return OUROBOROS_COMMAND.description
   await writeLoopState($, { ...state, paused: true })
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'

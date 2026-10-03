@@ -382,6 +382,22 @@ test('/ouroboros resume drops a kickoff and a phase that already ran and offers 
   expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1', brief_path: '.claude/ouroboros/briefs/M1.md', pending: { workflow: 'phase', args: { phase: 'P1' } } })
 })
 
+test('/ouroboros adopt and set repair state.json and print it before and after', async ($, on) => {
+  const stuck = JSON.stringify({ milestone: 'M1', phases: ['P0', 'P1'], current: null, status: 'kickoff', escalations: [], results: {}, pending: { workflow: 'milestone-kickoff', args: { milestone: 'M1' } } })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': stuck })
+
+  const adopted = await run($, 'adopt wr4z11mqu phase P1')
+
+  expect(adopted.text).toBe(
+    'before: M1 · phase - · kickoff · in flight nothing · pending milestone-kickoff\nafter:  M1 · phase P1 · phase · in flight phase (wr4z11mqu) · pending milestone-kickoff',
+  )
+  expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1', run: { id: 'wr4z11mqu', workflow: 'phase' } })
+
+  expect((await run($, 'set status escalated')).text).toContain('after:  M1 · phase P1 · escalated')
+  expect((await run($, 'set phase P7')).text).toBe('unknown phase P7: one of P0, P1')
+  expect(stateOn(disk)).toMatchObject({ status: 'escalated', current: 'P1' })
+})
+
 test('the loop header rides on the prompt context', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
