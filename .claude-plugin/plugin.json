@@ -1,5 +1,5 @@
 {
-  "name": "dev-loop",
+  "name": "ouroboros",
   "version": "0.1.0",
-  "description": "Milestone and phase development loop: long-lived specialist agents, shared skills that improve after every phase, ADRs and planning lessons, run as Claude Code workflows and function hooks."
+  "description": "The dev loop that eats its own mistakes: milestone and phase workflows, long-lived specialist agents, and skills that rewrite themselves after every phase, each change proven by an eval."
 }
