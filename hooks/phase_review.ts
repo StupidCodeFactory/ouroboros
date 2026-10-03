@@ -1,6 +1,7 @@
 export type Hunk = { file: string; start: number; end: number }
 export type Reviewer = { agent: string; stage: string }
-export type ReviewFinding = { reviewer?: string; file?: string; line?: number; summary: string; blocking: boolean }
+export type ReviewFinding = { reviewer?: string; task?: string; file?: string; line?: number; summary: string; blocking: boolean }
+export type TaskDiffs = Record<string, Hunk[]>
 export type Implemented = { changed?: boolean; commits?: string[]; hunks?: Hunk[]; evidence?: string }
 
 export const needsReview = (implemented: Implemented | undefined) => implemented?.changed !== false
@@ -34,11 +35,23 @@ export const reviewersForRound = <R extends Reviewer>(round: number, maxRounds: 
 export const isInDiff = (finding: ReviewFinding, diff: Hunk[]) =>
   diff.some(hunk => finding.file !== undefined && finding.line !== undefined && samePath(hunk.file, finding.file) && finding.line >= hunk.start && finding.line <= hunk.end)
 
-export const triageFindings = (findings: ReviewFinding[], diff: Hunk[]) => {
-  const raised = findings.filter(finding => finding.blocking)
+export const ownerTask = (finding: ReviewFinding, diffs: TaskDiffs) => {
+  if (finding.task !== undefined && diffs[finding.task] !== undefined) return finding.task
+  return Object.keys(diffs).find(id => isInDiff(finding, diffs[id] ?? []))
+}
+
+export const withOwner = (finding: ReviewFinding, diffs: TaskDiffs) => {
+  const task = ownerTask(finding, diffs)
+  return task === undefined ? finding : { ...finding, task }
+}
+
+export const isInOwnDiff = (finding: ReviewFinding, diffs: TaskDiffs) => finding.task !== undefined && isInDiff(finding, diffs[finding.task] ?? [])
+
+export const triagePhaseFindings = (findings: ReviewFinding[], diffs: TaskDiffs) => {
+  const raised = findings.filter(finding => finding.blocking).map(finding => withOwner(finding, diffs))
   return {
-    blocking: raised.filter(finding => isInDiff(finding, diff)),
-    followUps: raised.filter(finding => !isInDiff(finding, diff)),
+    blocking: raised.filter(finding => isInOwnDiff(finding, diffs)),
+    followUps: raised.filter(finding => !isInOwnDiff(finding, diffs)),
   }
 }
 
@@ -49,17 +62,16 @@ const followUpBox = (finding: ReviewFinding) => `- [ ] ${finding.summary} (${loc
 export const followUpSection = (phase: string, taskId: string, followUps: ReviewFinding[]) =>
   `\n### Task ${taskId}-follow-ups: follow-ups raised while reviewing ${phase} task ${taskId}\n${followUps.map(followUpBox).join('')}`
 
-type PhaseTaskResult = { id?: unknown; follow_ups?: unknown }
-
-const taskFollowUps = (phase: string, task: PhaseTaskResult) => {
-  if (!Array.isArray(task.follow_ups) || task.follow_ups.length === 0) return ''
-  return followUpSection(phase, String(task.id), task.follow_ups as ReviewFinding[])
+const groupedByTask = (followUps: ReviewFinding[], phase: string) => {
+  const groups = new Map<string, ReviewFinding[]>()
+  for (const finding of followUps) groups.set(finding.task ?? phase, [...(groups.get(finding.task ?? phase) ?? []), finding])
+  return [...groups]
 }
 
 export const phaseFollowUps = (json: Record<string, unknown> | undefined) => {
-  if (!Array.isArray(json?.tasks)) return ''
+  if (!Array.isArray(json?.follow_ups) || json.follow_ups.length === 0) return ''
   const phase = typeof json.phase === 'string' ? json.phase : ''
-  return (json.tasks as PhaseTaskResult[]).map(task => taskFollowUps(phase, task)).join('')
+  return groupedByTask(json.follow_ups as ReviewFinding[], phase).map(([taskId, findings]) => followUpSection(phase, taskId, findings)).join('')
 }
 
 export type Checkpoint = { committed: boolean; sha: string; suite_green: boolean; evidence: string }

@@ -5,7 +5,7 @@ import * as phaseReview from '../hooks/phase_review.ts'
 const MIRRORED = {
   'workflows/phase.js': [
     'needsReview', 'samePath', 'sameSpot', 'isCoveredBy', 'reviewersOwningEachFinding', 'touchesOtherFiles',
-    'reviewersForRound', 'isInDiff', 'triageFindings', 'checkpointVerdict',
+    'reviewersForRound', 'isInDiff', 'ownerTask', 'withOwner', 'isInOwnDiff', 'triagePhaseFindings', 'checkpointVerdict',
   ],
 }
 

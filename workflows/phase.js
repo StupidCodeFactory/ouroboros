@@ -1,6 +1,6 @@
 export const meta = {
   name: 'phase',
-  description: 'One phase: implement each task outside-in, review in parallel, fix up to three rounds, checkpoint',
+  description: 'One phase: implement every task outside-in, review the whole phase diff in parallel, fix by task for up to three rounds, checkpoint',
   phases: [{ title: 'Implement' }, { title: 'Review' }, { title: 'Checkpoint' }],
 }
 
@@ -23,9 +23,10 @@ const FINDINGS_SCHEMA = {
           root_cause: { type: 'string', enum: ['code-bug', 'skill-gap', 'skill-misread', 'skill-misuse', 'agent-behaviour'] },
           skill: { type: 'string' },
           agent: { type: 'string' },
+          task: { type: 'string' },
           blocking: { type: 'boolean' },
         },
-        required: ['summary', 'root_cause', 'blocking'],
+        required: ['summary', 'root_cause', 'blocking', 'task'],
       },
     },
   },
@@ -87,9 +88,6 @@ const briefText = task => {
   return `Architect brief:\n${args.brief}`
 }
 
-const fixInstruction = blocking =>
-  blocking.length ? `Fix these blocking findings:\n${JSON.stringify(blocking)}` : 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
-
 const COMMIT_RULE = '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.'
 
 const RESULT_INSTRUCTION =
@@ -115,14 +113,33 @@ const reviewersOwningEachFinding = (reviewers, blocking) => {
 
 const touchesOtherFiles = (fix, blocking) => fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
 
+const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
+  if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
+  if (touchesOtherFiles(fix, previousBlocking)) return reviewers
+  const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
+  return owners.length === 0 ? reviewers : owners
+}
+
 const isInDiff = (finding, diff) =>
   diff.some(hunk => finding.file !== undefined && finding.line !== undefined && samePath(hunk.file, finding.file) && finding.line >= hunk.start && finding.line <= hunk.end)
 
-const triageFindings = (findings, diff) => {
-  const raised = findings.filter(finding => finding.blocking)
+const ownerTask = (finding, diffs) => {
+  if (finding.task !== undefined && diffs[finding.task] !== undefined) return finding.task
+  return Object.keys(diffs).find(id => isInDiff(finding, diffs[id] ?? []))
+}
+
+const withOwner = (finding, diffs) => {
+  const task = ownerTask(finding, diffs)
+  return task === undefined ? finding : { ...finding, task }
+}
+
+const isInOwnDiff = (finding, diffs) => finding.task !== undefined && isInDiff(finding, diffs[finding.task] ?? [])
+
+const triagePhaseFindings = (findings, diffs) => {
+  const raised = findings.filter(finding => finding.blocking).map(finding => withOwner(finding, diffs))
   return {
-    blocking: raised.filter(finding => isInDiff(finding, diff)),
-    followUps: raised.filter(finding => !isInDiff(finding, diff)),
+    blocking: raised.filter(finding => isInOwnDiff(finding, diffs)),
+    followUps: raised.filter(finding => !isInOwnDiff(finding, diffs)),
   }
 }
 
@@ -132,67 +149,121 @@ const checkpointVerdict = (checkpoint) => {
   return { status, evidence: checkpoint.evidence }
 }
 
-const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
-  if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
-  if (touchesOtherFiles(fix, previousBlocking)) return reviewers
-  const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
-  return owners.length === 0 ? reviewers : owners
-}
+const IMPLEMENT_INSTRUCTION = 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
 
-const implementPrompt = (task, blocking) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${fixInstruction(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+const implementPrompt = task =>
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
-const reviewPrompt = (reviewer, task) =>
-  eagerPreamble(`${reviewer}.md`) +
-  `Review the diff for ${args.phase} task ${task.id} (${task.title}) on the current branch as the ${reviewer}. ` +
-  'Return every finding with its root cause; mark blocking ones. A finding blocks only when its file and line fall inside this task\'s diff; ' +
-  'anything about code outside it is recorded as a follow-up in the plan and never blocks.'
+const fixPrompt = (task, blocking) =>
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n` +
+  `Fix these blocking findings:\n${JSON.stringify(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
-const implementStage = blocking => (blocking.length ? 'fix' : 'implement')
-
-const implement = (task, blocking, round) =>
-  agent(implementPrompt(task, blocking), {
+const implement = task =>
+  agent(implementPrompt(task), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Implement',
-    label: `implement:${task.id}:r${round}`,
-    effort: stageEffort(args.effort, implementStage(blocking)),
+    label: `implement:${task.id}`,
+    effort: stageEffort(args.effort, 'implement'),
   })
 
-const review = (reviewer, task) =>
-  agent(reviewPrompt(reviewer.agent, task), {
+const fix = (task, blocking, round) =>
+  agent(fixPrompt(task, blocking), {
+    agentType: ouroborosAgent('implementer'),
+    schema: IMPLEMENT_SCHEMA,
+    phase: 'Review',
+    label: `fix:${task.id}:r${round}`,
+    effort: stageEffort(args.effort, 'fix'),
+  })
+
+const commonBrief = () => (args.brief_dir ? `Common brief: ${args.brief_dir}/common.md; each task's slice is ${args.brief_dir}/<task id>.md.\n` : '')
+
+const taskLine = entry => `- task ${entry.task.id} (${entry.task.title}): commits ${entry.commits.join(', ') || 'none'}`
+
+const REVIEW_RULES =
+  'Name the task each finding belongs to in `task`. A finding blocks only when its file and line fall inside that task\'s diff; ' +
+  'anything about code outside it is recorded as a follow-up in the plan and never blocks. Return every finding with its root cause; mark blocking ones.'
+
+const reviewPrompt = (reviewer, entries) =>
+  eagerPreamble(`${reviewer}.md`) +
+  commonBrief() +
+  `Review the whole ${args.phase} diff on the current branch as the ${reviewer}. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
+
+const recheckPrompt = (reviewer, entries, blocking) =>
+  eagerPreamble(`${reviewer}.md`) +
+  commonBrief() +
+  `As the ${reviewer}, re-check these blocking findings on the ${args.phase} diff after the fixes:\n${JSON.stringify(blocking)}\n` +
+  `Report each one still open and anything the fixes broke; do not review the rest again. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
+
+const roundPrompt = (reviewer, round, entries, blocking) => (round === 1 ? reviewPrompt(reviewer, entries) : recheckPrompt(reviewer, entries, blocking))
+
+const review = (reviewer, round, entries, blocking) =>
+  agent(roundPrompt(reviewer.agent, round, entries, blocking), {
     agentType: ouroborosAgent(reviewer.agent),
     schema: FINDINGS_SCHEMA,
     phase: 'Review',
-    label: `${reviewer.agent}:${task.id}`,
+    label: `${reviewer.agent}:r${round}`,
     effort: stageEffort(args.effort, reviewer.stage),
   })
 
 const tagged = (reviewer, result) => (result ? result.findings.map(finding => ({ ...finding, reviewer: reviewer.agent })) : [])
 
-const reviewTask = async (task, reviewers) => {
-  const reviews = await parallel(reviewers.map(reviewer => () => review(reviewer, task)))
+const reviewRound = async (reviewers, round, entries, blocking) => {
+  const reviews = await parallel(reviewers.map(reviewer => () => review(reviewer, round, entries, blocking)))
   return reviews.flatMap((result, index) => tagged(reviewers[index], result))
 }
 
-const runTask = async task => {
-  let blocking = []
-  const allFindings = []
+const diffsOf = entries => Object.fromEntries(entries.map(entry => [entry.task.id, entry.hunks]))
+
+const blockingOf = (entry, blocking) => blocking.filter(finding => finding.task === entry.task.id)
+
+const recordFix = (entry, fixed) => {
+  if (!fixed) return []
+  entry.commits.push(...(fixed.commits ?? []))
+  entry.hunks.push(...(fixed.hunks ?? []))
+  return fixed.hunks ?? []
+}
+
+const fixRound = async (entries, blocking, round) => {
+  const fixHunks = []
+  for (const entry of entries.filter(candidate => blockingOf(candidate, blocking).length)) {
+    fixHunks.push(...recordFix(entry, await fix(entry.task, blockingOf(entry, blocking), round)))
+  }
+  return fixHunks
+}
+
+const reviewPhase = async entries => {
+  const findings = []
   const followUps = []
-  const diff = []
+  let blocking = []
+  let fixHunks = []
   for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
-    const implemented = await implement(task, blocking, round)
-    if (round === 1 && !needsReview(implemented)) return { id: task.id, status: 'verified', rounds: 1, evidence: implemented.evidence, findings: [], follow_ups: [] }
-    const fix = implemented && implemented.hunks ? implemented.hunks : []
-    diff.push(...fix)
-    const findings = await reviewTask(task, reviewersForRound(round, MAX_FIX_ROUNDS, REVIEWERS, blocking, fix))
-    allFindings.push(...findings)
-    const triaged = triageFindings(findings, diff)
+    if (round > 1) fixHunks = await fixRound(entries, blocking, round)
+    const raised = await reviewRound(reviewersForRound(round, MAX_FIX_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
+    findings.push(...raised)
+    const triaged = triagePhaseFindings(raised, diffsOf(entries))
     followUps.push(...triaged.followUps)
     blocking = triaged.blocking
-    if (!blocking.length) return { id: task.id, status: 'done', rounds: round, findings: allFindings, follow_ups: followUps }
+    if (!blocking.length) return { blocking, findings, followUps, rounds: round }
   }
-  return { id: task.id, status: 'escalate', rounds: MAX_FIX_ROUNDS, findings: allFindings, follow_ups: followUps }
+  return { blocking, findings, followUps, rounds: MAX_FIX_ROUNDS }
+}
+
+const NOT_REVIEWED = { blocking: [], findings: [], followUps: [], rounds: 0 }
+
+const entryOf = (task, implemented) => ({
+  task,
+  changed: needsReview(implemented),
+  commits: implemented?.commits ?? [],
+  hunks: implemented?.hunks ?? [],
+  evidence: implemented?.evidence ?? 'implementer returned nothing',
+})
+
+const taskResult = (entry, outcome) => {
+  if (!entry.changed) return { id: entry.task.id, status: 'verified', commits: [], evidence: entry.evidence, findings: [] }
+  const escalated = blockingOf(entry, outcome.blocking).length > 0
+  const findings = outcome.findings.filter(finding => finding.task === entry.task.id)
+  return { id: entry.task.id, status: escalated ? 'escalate' : 'done', commits: entry.commits, evidence: entry.evidence, findings }
 }
 
 const checkpointPrompt = () =>
@@ -212,13 +283,15 @@ const checkpoint = () =>
 phase('Implement')
 const tasks = args.tasks ?? []
 if (!tasks.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
-const taskResults = []
-for (const task of tasks) taskResults.push(await runTask(task))
+const entries = []
+for (const task of tasks) entries.push(entryOf(task, await implement(task)))
 
-if (taskResults.some(result => result.status === 'escalate')) {
-  return { status: 'escalate', phase: args.phase, tasks: taskResults, evidence: '' }
-}
+phase('Review')
+const reviewed = entries.filter(entry => entry.changed)
+const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
+const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds }
+if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
 phase('Checkpoint')
 const verdict = checkpointVerdict(await checkpoint())
-return { status: verdict.status, phase: args.phase, tasks: taskResults, evidence: verdict.evidence }
+return { status: verdict.status, ...summary, evidence: verdict.evidence }

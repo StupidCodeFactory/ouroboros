@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, followUpSection, needsReview, reviewersForRound, triageFindings } from './phase_review'
+import { checkpointVerdict, followUpSection, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -93,21 +93,40 @@ const UNTOUCHED_CALLERS = {
   blocking: true,
 }
 
-test('a blocking finding inside the task diff blocks', () => {
-  expect(triageFindings([SINGLETON_FINDING], TASK_3_DIFF)).toEqual({ blocking: [SINGLETON_FINDING], followUps: [] })
+const PHASE_DIFFS = {
+  '3': TASK_3_DIFF,
+  '17': [{ file: 'lib/price_feed/month_bucket.rb', start: 1, end: 40 }],
+}
+
+test('a blocking finding inside its task diff blocks that task', () => {
+  const finding = { ...SINGLETON_FINDING, task: '3' }
+  expect(triagePhaseFindings([finding], PHASE_DIFFS)).toEqual({ blocking: [finding], followUps: [] })
 })
 
-test('a blocking finding on code outside the task diff becomes a follow-up and blocks nothing', () => {
-  expect(triageFindings([UNTOUCHED_CALLERS], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [UNTOUCHED_CALLERS] })
+test('a blocking finding that names no task is owned by the task whose diff holds its line', () => {
+  const finding = { ...SINGLETON_FINDING, file: 'lib/price_feed/month_bucket.rb', line: 12 }
+  expect(triagePhaseFindings([finding], PHASE_DIFFS).blocking).toEqual([{ ...finding, task: '17' }])
 })
 
-test('a blocking finding without a file and line cannot be placed in the diff, so it is a follow-up', () => {
+test('a blocking finding on code outside its task diff becomes a follow-up and blocks nothing', () => {
+  const finding = { ...UNTOUCHED_CALLERS, task: '3' }
+  expect(triagePhaseFindings([finding], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [finding] })
+})
+
+test('a blocking finding without a file and line cannot be placed in a diff, so it is a follow-up', () => {
   const planDrift = { reviewer: 'auditor', summary: 'Plan Task 4 is stale: its Files list still says Create: spec/guards/dangerous_tasks_spec.rb.', blocking: true }
-  expect(triageFindings([planDrift], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [planDrift] })
+  expect(triagePhaseFindings([planDrift], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [planDrift] })
 })
 
 test('a non-blocking finding is neither', () => {
-  expect(triageFindings([{ ...UNTOUCHED_CALLERS, blocking: false }], TASK_3_DIFF)).toEqual({ blocking: [], followUps: [] })
+  expect(triagePhaseFindings([{ ...UNTOUCHED_CALLERS, blocking: false }], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [] })
+})
+
+test('phase follow-ups group by task, unowned ones under the phase', () => {
+  const unowned = { reviewer: 'auditor', summary: 'Plan drift in Task 4.', blocking: true }
+  expect(phaseFollowUps({ phase: 'P0', follow_ups: [{ ...UNTOUCHED_CALLERS, task: '3' }, unowned] })).toBe(
+    followUpSection('P0', '3', [{ ...UNTOUCHED_CALLERS, task: '3' }]) + followUpSection('P0', 'P0', [unowned]),
+  )
 })
 
 test('follow-ups land in the plan as one untagged task of unchecked boxes', () => {

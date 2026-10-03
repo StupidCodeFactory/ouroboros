@@ -286,7 +286,7 @@ test('a checkpointed phase notification is filed, starts the retro and is consum
 test('follow-ups a phase raised outside a task diff are appended to the plan as unchecked boxes', async ($, on) => {
   const outputFile = '/tmp/tasks/wf-1.output'
   const followUp = { reviewer: 'reviewer', file: 'lib/price_feed/backfill/runner.rb', line: 163, summary: 'Untouched callers still reach the singleton through .instance.', blocking: true }
-  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '3', status: 'done', follow_ups: [followUp] }] } })
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '3', status: 'done' }], follow_ups: [{ ...followUp, task: '3' }] } })
   const disk = worldBeneath(on, {
     '.claude/ouroboros.json': CONFIG,
     '.claude/ouroboros/state.json': phaseInFlight,
