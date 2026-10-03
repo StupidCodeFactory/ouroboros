@@ -1,15 +1,18 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PLANNING_SKILLS, candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
+import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
 
-test('planning skills are brainstorming and writing-plans', () => {
-  expect([...PLANNING_SKILLS]).toEqual(['superpowers:brainstorming', 'superpowers:writing-plans'])
+const PLANNING_SKILLS = ['acme:brainstorm', 'acme:plan-writer']
+
+test('the configured planning skills match qualified or bare', () => {
+  expect(isPlanningSkill(PLANNING_SKILLS, 'brainstorm')).toBe(true)
+  expect(isPlanningSkill(PLANNING_SKILLS, 'acme:plan-writer')).toBe(true)
+  expect(isPlanningSkill(PLANNING_SKILLS, 'commit')).toBe(false)
 })
 
-test('a bare skill name matches too', () => {
-  expect(isPlanningSkill('brainstorming')).toBe(true)
-  expect(isPlanningSkill('superpowers:writing-plans')).toBe(true)
-  expect(isPlanningSkill('commit')).toBe(false)
+test('no configured planning skills means nothing is a planning skill', () => {
+  expect(isPlanningSkill([], 'brainstorm')).toBe(false)
+  expect(isPlanningSkill(undefined, 'brainstorm')).toBe(false)
 })
 
 test('lessons follow the skill text', () => {

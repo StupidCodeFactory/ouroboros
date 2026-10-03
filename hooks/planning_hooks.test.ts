@@ -3,6 +3,8 @@ import type { On } from 'claude-code'
 
 const LESSONS_FILE = 'skills/planning-lessons/SKILL.md'
 const INCIDENTS_FILE = 'skills/planning-lessons/incidents.md'
+const CONFIG_FILE = '.claude/ouroboros.json'
+const CONFIG = JSON.stringify({ planning_skills: ['acme:brainstorm', 'acme:plan-writer'] })
 const COMPOSER = { kind: 'composer' as const }
 const PRESENTATION = { isFullscreen: false, columns: 80 }
 
@@ -33,34 +35,44 @@ const sessionBeneath = (on: On) => {
   gitBeneath(on, 'phase(P1): first')
 }
 
-test('brainstorming reads with the planning lessons appended', async ($, on) => {
+test('a configured planning skill reads with the planning lessons appended', async ($, on) => {
   sessionBeneath(on)
-  filesBeneath(on, { [LESSONS_FILE]: '---\nname: planning-lessons\n---\n1. Map first.' })
+  filesBeneath(on, { [CONFIG_FILE]: CONFIG, [LESSONS_FILE]: '---\nname: planning-lessons\n---\n1. Map first.' })
 
-  const shown = await $.skill.prompt({ skill: 'superpowers:brainstorming', text: 'BRAINSTORM' })
+  const shown = await $.skill.prompt({ skill: 'acme:brainstorm', text: 'BRAINSTORM' })
 
   expect(shown.text).toBe('BRAINSTORM\n\n## Planning lessons (from past sessions)\n\n1. Map first.')
+})
+
+test('without configured planning skills no skill gets lessons', async ($, on) => {
+  sessionBeneath(on)
+  filesBeneath(on, { [LESSONS_FILE]: 'lessons' })
+
+  const shown = await $.skill.prompt({ skill: 'acme:brainstorm', text: 'BRAINSTORM' })
+
+  expect(shown.text).toBe('BRAINSTORM')
 })
 
 test('an unrelated skill is left alone', async ($, on) => {
   sessionBeneath(on)
   const reads: string[] = []
+  on('fs.exists', (_, e) => ({ value: e.path.endsWith(CONFIG_FILE) }))
   on('fs.read', (_, e) => {
     reads.push(e.path)
-    return { value: '' }
+    return { value: e.path.endsWith(CONFIG_FILE) ? CONFIG : '' }
   })
 
   const shown = await $.skill.prompt({ skill: 'commit', text: 'COMMIT' })
 
   expect(shown.text).toBe('COMMIT')
-  expect(reads).toEqual([])
+  expect(reads.filter(path => !path.endsWith(CONFIG_FILE))).toEqual([])
 })
 
 test('a prompt during planning is a candidate lesson, and planning ends with a turn that ran no planning skill', async ($, on) => {
   sessionBeneath(on)
-  const files = filesBeneath(on, { [LESSONS_FILE]: 'lessons', [INCIDENTS_FILE]: '# Incidents\n\n' })
+  const files = filesBeneath(on, { [CONFIG_FILE]: CONFIG, [LESSONS_FILE]: 'lessons', [INCIDENTS_FILE]: '# Incidents\n\n' })
 
-  await $.skill.prompt({ skill: 'writing-plans', text: 'PLAN' })
+  await $.skill.prompt({ skill: 'plan-writer', text: 'PLAN' })
   await $.turn.complete(mainTurn)
   await $.prompt.submit({ text: 'no, keep the existing queue', wait: false, origin: COMPOSER })
   await $.turn.complete(mainTurn)

@@ -1,8 +1,7 @@
 ---
 name: adr-scribe
-description: Background ADR writer and superpowers draft pruner.
+description: Background ADR writer and draft pruner.
 model: sonnet
-skills: [caveman:ultra, ponytail:ultra, checkbox-progress, adr-format]
 ---
 Maintain `<adr_dir>/NNNN-<slug>.md` and `<adr_dir>/README.md` (paths from `.claude/ouroboros.json`) in the `adr-format` skill's format.
 Never change the substance of an `Accepted` ADR; supersede it with a new one.

@@ -7,8 +7,8 @@ test('strips frontmatter', () => {
 })
 
 test('inlines bodies with levels', () => {
-  expect(eagerBlock([{ ref: { name: 'caveman', level: 'ultra' }, body: 'Talk short.' }])).toBe(
-    '<eager-skills>\n<skill name="caveman">\nLevel: ultra\nTalk short.\n</skill>\n</eager-skills>\n\n',
+  expect(eagerBlock([{ ref: { name: 'terse', level: 'ultra' }, body: 'Talk short.' }])).toBe(
+    '<eager-skills>\n<skill name="terse">\nLevel: ultra\nTalk short.\n</skill>\n</eager-skills>\n\n',
   )
 })
 

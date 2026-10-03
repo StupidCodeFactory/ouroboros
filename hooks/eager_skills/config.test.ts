@@ -1,32 +1,32 @@
 import { expect, test } from 'claude-code/testing'
 
-import { eagerSkillNames, frontmatterSkills, laneOf } from './config'
+import { eagerSkillNames, laneOf } from './config'
 
 const config = {
   agents: {
     implementer: {
-      eager_skills: ['caveman:ultra', 'code-style'],
+      eager_skills: ['terse:ultra', 'code-style'],
       lanes: { ruby: { eager_skills: ['ruby-spec-conventions', 'code-style'] } },
     },
   },
 }
 
-test('merges defaults, agent and lane in order without duplicates', () => {
-  expect(eagerSkillNames(['phase-pr-workflow'], config, 'implementer', 'ruby')).toEqual([
-    { name: 'phase-pr-workflow' },
-    { name: 'caveman', level: 'ultra' },
+test('a configured agent loads its list then its lane list without duplicates', () => {
+  expect(eagerSkillNames(config, 'implementer', 'ruby')).toEqual([
+    { name: 'terse', level: 'ultra' },
     { name: 'code-style' },
     { name: 'ruby-spec-conventions' },
   ])
 })
 
-test('an agent without config keeps its defaults', () => {
-  expect(eagerSkillNames(['adr-format'], {}, 'adr-scribe', undefined)).toEqual([{ name: 'adr-format' }])
-})
-
-test('reads the skills list from agent frontmatter', () => {
-  expect(frontmatterSkills('---\nname: x\nskills: [caveman:ultra, code-style]\n---\nBody')).toEqual(['caveman:ultra', 'code-style'])
-  expect(frontmatterSkills('---\nname: x\n---\nBody')).toEqual([])
+test('an agent the project lists nothing for falls back to the ouroboros process skills', () => {
+  expect(eagerSkillNames({}, 'adr-scribe', undefined)).toEqual([{ name: 'checkbox-progress' }, { name: 'adr-format' }])
+  expect(eagerSkillNames({ agents: { implementer: { lanes: {} } } }, 'implementer', 'ruby')).toEqual([
+    { name: 'checkbox-progress' },
+    { name: 'code-style' },
+    { name: 'phase-pr-workflow' },
+  ])
+  expect(eagerSkillNames({}, 'skill-curator', undefined)).toEqual([])
 })
 
 test('the lane is the first word of the prompt after Lane', () => {

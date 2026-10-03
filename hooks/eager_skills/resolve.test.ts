@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { fixedSkillRoots, indexSkills, pluginCacheDir, resolveSkill } from './resolve'
+import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './resolve'
 
 test('fixed skill roots run project, plugin, then user', () => {
   expect(fixedSkillRoots('/project', '/plugin', '/home')).toEqual([
@@ -32,8 +32,16 @@ test('a root with a plugin prefix names its skills both ways', () => {
 })
 
 test('a qualified plugin skill beats the name:level reading', () => {
-  const index = { 'tooling:tidy': '/t/SKILL.md', tidy: '/t/SKILL.md', caveman: '/c/SKILL.md' }
+  const index = { 'tooling:tidy': '/t/SKILL.md', tidy: '/t/SKILL.md', terse: '/c/SKILL.md' }
   expect(resolveSkill(index, { name: 'tooling', level: 'tidy' })).toEqual({ ref: { name: 'tooling:tidy' }, path: '/t/SKILL.md' })
-  expect(resolveSkill(index, { name: 'caveman', level: 'ultra' })).toEqual({ ref: { name: 'caveman', level: 'ultra' }, path: '/c/SKILL.md' })
+  expect(resolveSkill(index, { name: 'terse', level: 'ultra' })).toEqual({ ref: { name: 'terse', level: 'ultra' }, path: '/c/SKILL.md' })
   expect(resolveSkill(index, { name: 'nowhere' })).toBe(undefined)
+})
+
+test('a plugin manifest places its skills, nested or not', () => {
+  expect(pluginSkillRoots('/cache/market/tooling/1.0.0', ['./skills/engineering/tidy', './skills/engineering/lint', './skills/productivity/focus'])).toEqual([
+    ['/cache/market/tooling/1.0.0/skills/engineering', ['tidy', 'lint']],
+    ['/cache/market/tooling/1.0.0/skills/productivity', ['focus']],
+  ])
+  expect(pluginSkillRoots('/cache/market/tooling/1.0.0', undefined)).toEqual([['/cache/market/tooling/1.0.0/skills', undefined]])
 })

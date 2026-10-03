@@ -1,9 +1,14 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const PLUGIN_AGENT = '---\nname: implementer\nskills: [caveman:ultra, checkbox-progress, tooling:tidy]\n---\nBuild.'
+const PLUGIN_AGENT = '---\nname: implementer\n---\nBuild.'
 const CONFIG = JSON.stringify({
-  agents: { implementer: { eager_skills: ['code-style'], lanes: { ruby: { eager_skills: ['spec-conventions'] } } } },
+  agents: {
+    implementer: {
+      eager_skills: ['terse:ultra', 'checkbox-progress', 'tooling:tidy', 'code-style'],
+      lanes: { ruby: { eager_skills: ['spec-conventions'] } },
+    },
+  },
   eager_skills_max_chars: 60000,
 })
 
@@ -38,26 +43,28 @@ const worldBeneath = (on: On, files: Record<string, string>, dirs: Record<string
 }
 
 const DIRS = {
-  '/project/.claude/skills': ['spec-conventions', 'code-style', 'checkbox-progress'],
+  '/project/.claude/skills': ['spec-conventions', 'code-style', 'checkbox-progress', 'adr-format'],
   '/home/.claude/plugins/cache': ['market'],
-  '/home/.claude/plugins/cache/market': ['caveman', 'tooling'],
+  '/home/.claude/plugins/cache/market': ['terse', 'tooling'],
   '/home/.claude/plugins/cache/market/tooling': ['2.0.0'],
-  '/home/.claude/plugins/cache/market/tooling/2.0.0/skills': ['tidy'],
-  '/home/.claude/plugins/cache/market/caveman': ['1.0.0'],
-  '/home/.claude/plugins/cache/market/caveman/1.0.0/skills': ['caveman'],
+  '/home/.claude/plugins/cache/market/terse': ['1.0.0'],
+  '/home/.claude/plugins/cache/market/terse/1.0.0/skills': ['terse'],
 }
 
 const FILES = {
   'agents/implementer.md': PLUGIN_AGENT,
+  'agents/adr-scribe.md': '---\nname: adr-scribe\n---\nWrite ADRs.',
   '.claude/ouroboros.json': CONFIG,
-  'skills/caveman/SKILL.md': '---\nname: caveman\n---\nTalk short.',
+  'tooling/2.0.0/.claude-plugin/plugin.json': JSON.stringify({ name: 'tooling', skills: ['./skills/engineering/tidy'] }),
+  'skills/terse/SKILL.md': '---\nname: terse\n---\nTalk short.',
+  'skills/adr-format/SKILL.md': 'Number ADRs.',
   'skills/checkbox-progress/SKILL.md': 'Tick boxes.',
   'skills/code-style/SKILL.md': 'Small functions.',
   'skills/spec-conventions/SKILL.md': 'Predicate matchers.',
-  'skills/tidy/SKILL.md': 'Keep it tidy.',
+  'engineering/tidy/SKILL.md': 'Keep it tidy.',
 }
 
-test('an ouroboros agent starts with its merged eager skills inlined and the spawn recorded', async ($, on) => {
+test('an ouroboros agent starts with its configured eager skills inlined and the spawn recorded', async ($, on) => {
   const written = worldBeneath(on, FILES, DIRS)
   const prompts: string[] = []
   on('agent.spawn', (_, e) => {
@@ -70,18 +77,34 @@ test('an ouroboros agent starts with its merged eager skills inlined and the spa
 
   expect(spawned.deny).toBe(undefined)
   expect(prompts[0]).toBe(
-    '<eager-skills>\n<skill name="caveman">\nLevel: ultra\nTalk short.\n</skill>\n<skill name="checkbox-progress">\nTick boxes.\n</skill>\n<skill name="tooling:tidy">\nKeep it tidy.\n</skill>\n' +
+    '<eager-skills>\n<skill name="terse">\nLevel: ultra\nTalk short.\n</skill>\n<skill name="checkbox-progress">\nTick boxes.\n</skill>\n<skill name="tooling:tidy">\nKeep it tidy.\n</skill>\n' +
       '<skill name="code-style">\nSmall functions.\n</skill>\n<skill name="spec-conventions">\nPredicate matchers.\n</skill>\n</eager-skills>\n\n' +
       'Lane ruby. Build the thing.',
   )
   const record = JSON.parse((written.get('spawns.jsonl') ?? '').trim())
   expect(record).toMatchObject({ agent: 'implementer', lane: 'ruby' })
-  expect(record.skills.map((skill: { name: string }) => skill.name)).toEqual(['caveman', 'checkbox-progress', 'tooling:tidy', 'code-style', 'spec-conventions'])
+  expect(record.skills.map((skill: { name: string }) => skill.name)).toEqual(['terse', 'checkbox-progress', 'tooling:tidy', 'code-style', 'spec-conventions'])
   expect(record.skills[0].sha).toMatch(/^[0-9a-f]{64}$/)
 })
 
+test('an agent the project lists nothing for gets the ouroboros process skills', async ($, on) => {
+  worldBeneath(on, FILES, DIRS)
+  const prompts: string[] = []
+  on('agent.spawn', (_, e) => {
+    prompts.push(e.prompt)
+    return { model: 'fable', agentId: 'scribe-1' }
+  })
+
+  await $.agent.spawn(spawnInput('ouroboros:adr-scribe', 'Open ADRs.'))
+
+  expect(prompts[0]).toBe(
+    '<eager-skills>\n<skill name="checkbox-progress">\nTick boxes.\n</skill>\n<skill name="adr-format">\nNumber ADRs.\n</skill>\n</eager-skills>\n\nOpen ADRs.',
+  )
+})
+
 test('a skill nobody ships refuses the spawn by name', async ($, on) => {
-  worldBeneath(on, { ...FILES, 'agents/implementer.md': '---\nskills: [nowhere-skill]\n---\n' }, DIRS)
+  const config = JSON.stringify({ agents: { implementer: { eager_skills: ['nowhere-skill'] } } })
+  worldBeneath(on, { ...FILES, '.claude/ouroboros.json': config }, DIRS)
   on('agent.spawn', () => ({ model: 'fable', agentId: 'impl-1' }))
 
   const spawned = await $.agent.spawn(spawnInput('implementer', 'Lane ruby. Build.'))
@@ -90,8 +113,8 @@ test('a skill nobody ships refuses the spawn by name', async ($, on) => {
 })
 
 test('an eager block over the budget refuses the spawn with the sizes', async ($, on) => {
-  const config = JSON.stringify({ eager_skills_max_chars: 20 })
-  worldBeneath(on, { ...FILES, '.claude/ouroboros.json': config, 'agents/implementer.md': '---\nskills: [code-style]\n---\n' }, DIRS)
+  const config = JSON.stringify({ eager_skills_max_chars: 20, agents: { implementer: { eager_skills: ['code-style'] } } })
+  worldBeneath(on, { ...FILES, '.claude/ouroboros.json': config }, DIRS)
   on('agent.spawn', () => ({ model: 'fable', agentId: 'impl-1' }))
 
   const spawned = await $.agent.spawn(spawnInput('implementer', 'Build.'))

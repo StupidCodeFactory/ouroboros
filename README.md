@@ -11,7 +11,7 @@ A Claude Code plugin that runs a disciplined, self-improving development loop. E
 
 Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
 
-Specs and plans are ordinary superpowers drafts: `### Task <id>: <title> (PN)` headings and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
+Specs and plans are ordinary markdown drafts: `### Task <id>: <title> (PN)` headings and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
 
 Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
 
@@ -28,14 +28,40 @@ The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `
 
 ## Project setup
 
-Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint commands, lint baseline, lane skills), each agent's eager skills, `adr_dir` and `drafts_dir`. Put language and domain rules in the project's own `.claude/skills/`; the plugin's skills stay project-agnostic.
+Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint commands, lint baseline, lane skills), each agent's eager skills, the planning skills, `adr_dir` and `drafts_dir`. Put language and domain rules in the project's own `.claude/skills/`; the plugin's skills stay project-agnostic. ouroboros hardcodes no skill or plugin from outside itself: every skill an agent loads is named here.
+
+```json
+{
+  "lanes": {
+    "ruby": { "owned_paths": ["lib/**", "spec/**"], "test": "bundle exec rspec", "lint": "bundle exec rubocop", "lint_baseline": 0 }
+  },
+  "agents": {
+    "architect": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "ouroboros:findings-contract", "ouroboros:adr-format", "your-plugin:design"] },
+    "implementer": {
+      "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "your-plugin:tdd"],
+      "lanes": { "ruby": { "eager_skills": ["ruby-spec-conventions"] } }
+    },
+    "reviewer": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:findings-contract", "your-plugin:code-review"] },
+    "auditor": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:findings-contract"] },
+    "adr-scribe": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:adr-format"] },
+    "skill-curator": { "eager_skills": ["your-plugin:writing-skills"] }
+  },
+  "planning_skills": ["your-plugin:brainstorm", "your-plugin:write-plan"],
+  "eager_skills_max_chars": 60000,
+  "effort": { "brief": "high", "implement": "high", "review": "high", "audit": "medium", "checkpoint": "low" },
+  "adr_dir": "docs/adr",
+  "drafts_dir": "docs/drafts"
+}
+```
+
+`agents.<agent>.eager_skills` (plus `lanes.<lane>.eager_skills` for implementers) is the only source of skills an agent loads; an agent the project lists nothing for gets ouroboros's own process skills for its role. `planning_skills` names the skills whose prompt gets the planning lessons appended; empty or missing means the planning hook never fires. `drafts_dir` is where `isDraftPath` looks for `specs/` and `plans/`.
 
 An optional `effort` map sets the reasoning effort per workflow stage; the conductor passes it to every workflow it launches as `args.effort`, and a stage left out inherits the session effort. Stages: `brief`, `implement`, `review`, `architect_review`, `audit`, `fix`, `planner`, `checkpoint`, `merge`; values: `low`, `medium`, `high`, `xhigh`, `max`.
 
-```json
-"effort": { "brief": "high", "implement": "high", "review": "high", "audit": "medium", "checkpoint": "low" }
-```
-
 Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief, tasks }` (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
+
+## Development
+
+Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh`, the plugin tests and `plugin validate`, and refuses the push on any failure.
 
 Status: under construction.

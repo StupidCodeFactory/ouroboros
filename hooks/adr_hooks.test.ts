@@ -31,10 +31,13 @@ const gitBeneath = (on: On, answers: Record<string, string>) =>
     value: { exitCode: 0, stdout: answers[e.argv.slice(0, 2).join(' ')] ?? '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
 
+const CONFIG_FILE = '.claude/ouroboros.json'
+const CONFIG = JSON.stringify({ drafts_dir: 'docs/drafts' })
+
 const filesBeneath = (on: On) => {
   const files = new Map<string, string>()
-  on('fs.exists', () => ({ value: false }))
-  on('fs.read', () => ({ value: '' }))
+  on('fs.exists', (_, e) => ({ value: e.path.endsWith(CONFIG_FILE) }))
+  on('fs.read', (_, e) => ({ value: e.path.endsWith(CONFIG_FILE) ? CONFIG : '' }))
   on('fs.write', (_, e) => {
     files.set(e.path.slice(e.path.indexOf('skills/')), e.text)
     return { value: undefined }
@@ -76,13 +79,13 @@ test('editing a draft after milestone kickoff folds it into its ADR and logs pla
   const files = filesBeneath(on)
   on('tool.call', { tool: 'Edit' }, () => ({ result: 'edited' }))
 
-  await $.tool.call({ tool: 'Edit', file_path: '/project/docs/superpowers/plans/m1.md', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Edit', file_path: '/project/docs/drafts/plans/m1.md', old_string: 'a', new_string: 'b' })
 
   expect(spawned).toHaveLength(1)
   expect(spawned[0]?.prompt).toContain('fold this draft change into its Proposed ADR')
-  expect(spawned[0]?.prompt).toContain('/project/docs/superpowers/plans/m1.md')
+  expect(spawned[0]?.prompt).toContain('/project/docs/drafts/plans/m1.md')
   expect(files.get('skills/planning-lessons/incidents.md')).toContain(
-    '| 2026-10-03 | P2 | main | plan-drift | | draft edited after kickoff | /project/docs/superpowers/plans/m1.md | open | |',
+    '| 2026-10-03 | P2 | main | plan-drift | | draft edited after kickoff | /project/docs/drafts/plans/m1.md | open | |',
   )
 })
 
@@ -92,7 +95,7 @@ test('editing a draft before kickoff folds it without logging drift', async ($, 
   const files = filesBeneath(on)
   on('tool.call', { tool: 'Write' }, () => ({ result: 'written' }))
 
-  await $.tool.call({ tool: 'Write', file_path: 'docs/superpowers/specs/x.md', content: 'spec' })
+  await $.tool.call({ tool: 'Write', file_path: 'docs/drafts/specs/x.md', content: 'spec' })
 
   expect(spawned).toHaveLength(1)
   expect(files.size).toBe(0)
@@ -100,6 +103,7 @@ test('editing a draft before kickoff folds it without logging drift', async ($, 
 
 test('writing a non-draft file touches nothing', async ($, on) => {
   const spawned = spawnsBeneath(on)
+  filesBeneath(on)
   on('tool.call', { tool: 'Write' }, () => ({ result: 'written' }))
 
   await $.tool.call({ tool: 'Write', file_path: 'lib/x.rb', content: 'code' })

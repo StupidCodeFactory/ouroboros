@@ -11,6 +11,22 @@ export const fixedSkillRoots = (projectRoot: string, pluginRoot: string, home: s
 
 export const pluginCacheDir = (home: string) => `${home}/.claude/plugins/cache`
 
+export type PluginSkillRoot = [root: string, names: string[] | undefined]
+
+const dirName = (path: string) => path.slice(0, path.lastIndexOf('/'))
+
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+
+export const pluginSkillRoots = (versionDir: string, manifestSkills: string[] | undefined): PluginSkillRoot[] => {
+  if (manifestSkills === undefined) return [[`${versionDir}/skills`, undefined]]
+  const byRoot = new Map<string, string[]>()
+  for (const entry of manifestSkills) {
+    const root = `${versionDir}/${dirName(entry.replace(/^\.\//, ''))}`
+    byRoot.set(root, [...(byRoot.get(root) ?? []), baseName(entry)])
+  }
+  return [...byRoot]
+}
+
 const qualifiedName = (ref: SkillRef) => (ref.level === undefined ? ref.name : `${ref.name}:${ref.level}`)
 
 export const indexSkills = (listing: SkillListing): SkillIndex => {

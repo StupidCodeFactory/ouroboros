@@ -1,8 +1,7 @@
-export const PLANNING_SKILLS = new Set(['superpowers:brainstorming', 'superpowers:writing-plans'])
-
 const bareName = (name: string) => name.slice(name.lastIndexOf(':') + 1)
 
-export const isPlanningSkill = (skill: string) => [...PLANNING_SKILLS].some(planning => bareName(planning) === bareName(skill))
+export const isPlanningSkill = (planningSkills: string[] | undefined, skill: string) =>
+  (planningSkills ?? []).some(planning => bareName(planning) === bareName(skill))
 
 export const withPlanningLessons = (skillText: string, lessonsText: string) =>
   `${skillText}\n\n## Planning lessons (from past sessions)\n\n${lessonsText}`

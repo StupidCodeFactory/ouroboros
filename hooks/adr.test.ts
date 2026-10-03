@@ -2,11 +2,16 @@ import { expect, test } from 'claude-code/testing'
 
 import { adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
 
-test('spec and plan drafts are drafts', () => {
-  expect(isDraftPath('docs/superpowers/specs/x.md')).toBe(true)
-  expect(isDraftPath('docs/superpowers/plans/x.md')).toBe(true)
-  expect(isDraftPath('/home/me/project/docs/superpowers/plans/x.md')).toBe(true)
-  expect(isDraftPath('docs/adr/0001-x.md')).toBe(false)
+test('spec and plan drafts under the configured drafts dir are drafts', () => {
+  expect(isDraftPath('docs/drafts', 'docs/drafts/specs/x.md')).toBe(true)
+  expect(isDraftPath('docs/drafts', 'docs/drafts/plans/x.md')).toBe(true)
+  expect(isDraftPath('docs/drafts', '/home/me/project/docs/drafts/plans/x.md')).toBe(true)
+  expect(isDraftPath('docs/drafts', 'docs/adr/0001-x.md')).toBe(false)
+  expect(isDraftPath('docs/drafts', 'docs/other/plans/x.md')).toBe(false)
+})
+
+test('without a drafts dir nothing is a draft', () => {
+  expect(isDraftPath(undefined, 'docs/drafts/plans/x.md')).toBe(false)
 })
 
 test('reads the architect decisions block', () => {
@@ -28,7 +33,7 @@ test('the scribe prompt carries the instruction and the decisions', () => {
 })
 
 test('a plan-drift row names the draft', () => {
-  expect(planDriftRow('2026-10-03', 'P2', 'docs/superpowers/plans/x.md')).toBe(
-    '| 2026-10-03 | P2 | main | plan-drift | | draft edited after kickoff | docs/superpowers/plans/x.md | open | |\n',
+  expect(planDriftRow('2026-10-03', 'P2', 'docs/drafts/plans/x.md')).toBe(
+    '| 2026-10-03 | P2 | main | plan-drift | | draft edited after kickoff | docs/drafts/plans/x.md | open | |\n',
   )
 })

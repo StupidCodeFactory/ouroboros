@@ -13,11 +13,11 @@ import type { Action } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
-import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerSkillNames, frontmatterSkills, laneOf } from './eager_skills/config'
+import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerSkillNames, laneOf } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
 import type { InlinedSkill } from './eager_skills/inline'
-import { fixedSkillRoots, indexSkills, pluginCacheDir, resolveSkill } from './eager_skills/resolve'
+import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
 import { IMPLEMENTER_AGENTS, RETRO_PROMPT, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
@@ -258,6 +258,10 @@ async function openProposedAdrs($: EngineInterface, architectText: string) {
 
 const planningLessonsPath = ($: EngineInterface, file: string) => `${$.plugin.root}/skills/planning-lessons/${file}`
 
+async function isDraft($: EngineInterface, path: string) {
+  return isDraftPath((await readConfig($)).drafts_dir, path)
+}
+
 async function foldDraftChange($: EngineInterface, draftPath: string) {
   await askAdrScribe($, `${FOLD_DRAFT_CHANGE}: ${draftPath}`)
   if (!(await isMilestoneKickedOff($))) return
@@ -294,26 +298,37 @@ async function subdirectories($: EngineInterface, path: string) {
 
 const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
+async function manifestSkills($: EngineInterface, versionDir: string): Promise<string[] | undefined> {
+  const manifestPath = `${versionDir}/.claude-plugin/plugin.json`
+  if (!(await $.fs.exists(manifestPath))) return undefined
+  return JSON.parse(await $.fs.read(manifestPath)).skills
+}
+
 async function installedPluginSkillRoots($: EngineInterface, home: string) {
-  const roots: Array<[string, string]> = []
+  const roots: Array<[string, string[] | undefined, string]> = []
   for (const marketplace of await subdirectories($, pluginCacheDir(home))) {
     for (const plugin of await subdirectories($, marketplace)) {
-      for (const version of await subdirectories($, plugin)) roots.push([`${version}/skills`, baseName(plugin)])
+      for (const version of await subdirectories($, plugin)) {
+        for (const [root, names] of pluginSkillRoots(version, await manifestSkills($, version))) roots.push([root, names, baseName(plugin)])
+      }
     }
   }
   return roots
 }
 
-async function skillNamesUnder($: EngineInterface, root: string, pluginPrefix: string | undefined): Promise<SkillListing[number]> {
-  const names = (await subdirectories($, root)).map(baseName)
-  return [root, names, pluginPrefix]
+async function skillNamesUnder($: EngineInterface, root: string, names: string[] | undefined, pluginPrefix: string | undefined): Promise<SkillListing[number]> {
+  return [root, names ?? (await subdirectories($, root)).map(baseName), pluginPrefix]
 }
 
 async function buildSkillIndex($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
   const [projectRoot, pluginRoot, userRoot] = fixedSkillRoots(await $.session.cwd(), $.plugin.root, home)
-  const roots: Array<[string, string | undefined]> = [[projectRoot as string, undefined], [pluginRoot as string, $.plugin.name], [userRoot as string, undefined]]
-  const listing = await Promise.all([...roots, ...(await installedPluginSkillRoots($, home))].map(([root, prefix]) => skillNamesUnder($, root, prefix)))
+  const roots: Array<[string, string[] | undefined, string | undefined]> = [
+    [projectRoot as string, undefined, undefined],
+    [pluginRoot as string, undefined, $.plugin.name],
+    [userRoot as string, undefined, undefined],
+  ]
+  const listing = await Promise.all([...roots, ...(await installedPluginSkillRoots($, home))].map(([root, names, prefix]) => skillNamesUnder($, root, names, prefix)))
   const index = indexSkills(listing)
   await $.state.set(SKILL_INDEX, index)
   return index
@@ -344,10 +359,6 @@ export async function activeDrafts($: EngineInterface) {
 
 const agentDefinitionPath = ($: EngineInterface, agent: string) => `${$.plugin.root}/agents/${agent}.md`
 
-async function pluginDefaultSkills($: EngineInterface, agent: string) {
-  return frontmatterSkills(await $.fs.read(agentDefinitionPath($, agent)))
-}
-
 async function inlineSkills($: EngineInterface, refs: SkillRef[]): Promise<InlinedSkill[] | { deny: string }> {
   const index = await skillIndex($)
   const missing = refs.find(ref => resolveSkill(index, ref) === undefined)
@@ -359,7 +370,7 @@ async function inlineSkills($: EngineInterface, refs: SkillRef[]): Promise<Inlin
 async function prepareEagerSpawn($: EngineInterface, agent: string, prompt: string): Promise<{ deny: string } | EagerSpawn> {
   const config = await readConfig($)
   const lane = laneOf(prompt)
-  const refs = eagerSkillNames(await pluginDefaultSkills($, agent), config, agent, lane)
+  const refs = eagerSkillNames(config, agent, lane)
   const skills = await inlineSkills($, refs)
   if ('deny' in skills) return skills
   const block = eagerBlock(skills)
@@ -455,7 +466,7 @@ export const register: Register = on => {
   })
 
   on('skill.prompt', async ($, e, next) => {
-    if (!isPlanningSkill(e.skill)) return next(e)
+    if (!isPlanningSkill((await readConfig($)).planning_skills, e.skill)) return next(e)
     const shown = await next(e)
     await markPlanningSkillRan($)
     return { text: withPlanningLessons(shown.text, await planningLessonsText($)) }
@@ -482,14 +493,14 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const written = await next(e)
-    if (!hasSucceeded(written) || !isDraftPath(e.file_path)) return written
+    if (!hasSucceeded(written) || !(await isDraft($, e.file_path))) return written
     await foldDraftChange($, e.file_path)
     return written
   })
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const edited = await next(e)
-    if (!hasSucceeded(edited) || !isDraftPath(e.file_path)) return edited
+    if (!hasSucceeded(edited) || !(await isDraft($, e.file_path))) return edited
     await foldDraftChange($, e.file_path)
     return edited
   })

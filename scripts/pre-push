@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+cd "$(dirname "$0")/.."
+B=$(find "$HOME/Library/Application Support/Claude/claude-code" -name claude -type f -perm +111 2>/dev/null | sort | tail -1)
+[ -n "$B" ] || B=claude
+./scripts/guard_no_outside_skills.sh
+"$B" plugin test .
+"$B" plugin validate .claude-plugin/plugin.json

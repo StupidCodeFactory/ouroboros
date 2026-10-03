@@ -1,7 +1,6 @@
 export type Decision = { title: string; context: string; decision: string; alternatives: string; consequences: string }
 
 const DECISIONS_BLOCK = /```json\s*(\{[\s\S]*?"decisions"[\s\S]*?\})\s*```/
-const DRAFT_PATH = /(^|\/)docs\/superpowers\/(specs|plans)\//
 
 export const OPEN_PROPOSED_ADRS = 'open Proposed ADRs'
 export const FOLD_DRAFT_CHANGE = 'fold this draft change into its Proposed ADR'
@@ -14,7 +13,12 @@ export const parseDecisions = (architectText: string): Decision[] => {
   return JSON.parse(match[1] as string).decisions
 }
 
-export const isDraftPath = (path: string) => DRAFT_PATH.test(path)
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export const isDraftPath = (draftsDir: string | undefined, path: string) => {
+  if (draftsDir === undefined) return false
+  return new RegExp(`(^|/)${escapeRegExp(draftsDir)}/(specs|plans)/`).test(path)
+}
 
 export const adrScribePrompt = (instruction: string, decisions: Decision[]) =>
   `${instruction}\n\n\`\`\`json\n${JSON.stringify({ decisions })}\n\`\`\``

@@ -6,13 +6,20 @@ export type Stage = 'brief' | 'implement' | 'review' | 'architect_review' | 'aud
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type OuroborosConfig = {
   agents?: Record<string, AgentConfig>
+  planning_skills?: string[]
   eager_skills_max_chars?: number
   drafts_dir?: string
   effort?: Partial<Record<Stage, Effort>>
 }
 
 export const DEFAULT_EAGER_SKILLS_MAX_CHARS = 60000
-const FRONTMATTER_SKILLS = /^skills:\s*\[([^\]]*)\]/m
+const PROCESS_SKILLS: Record<string, string[]> = {
+  architect: ['checkbox-progress', 'code-style', 'phase-pr-workflow', 'findings-contract', 'adr-format'],
+  implementer: ['checkbox-progress', 'code-style', 'phase-pr-workflow'],
+  reviewer: ['checkbox-progress', 'code-style', 'findings-contract'],
+  auditor: ['checkbox-progress', 'findings-contract'],
+  'adr-scribe': ['checkbox-progress', 'adr-format'],
+}
 const LANE_PROMPT = /^Lane (\S+)\./
 
 const toSkillRef = (entry: string): SkillRef => {
@@ -26,17 +33,11 @@ const dedupeByName = (refs: SkillRef[]) => {
   return refs.filter(ref => !seen.has(ref.name) && seen.add(ref.name))
 }
 
-export const eagerSkillNames = (pluginDefaults: string[], config: OuroborosConfig, agent: string, lane: string | undefined): SkillRef[] => {
+export const eagerSkillNames = (config: OuroborosConfig, agent: string, lane: string | undefined): SkillRef[] => {
   const agentConfig = config.agents?.[agent]
   const laneConfig = lane === undefined ? undefined : agentConfig?.lanes?.[lane]
-  const entries = [...pluginDefaults, ...(agentConfig?.eager_skills ?? []), ...(laneConfig?.eager_skills ?? [])]
-  return dedupeByName(entries.map(toSkillRef))
-}
-
-export const frontmatterSkills = (agentDefinition: string) => {
-  const match = FRONTMATTER_SKILLS.exec(agentDefinition)
-  if (!match) return []
-  return (match[1] as string).split(',').map(entry => entry.trim()).filter(entry => entry !== '')
+  const agentSkills = agentConfig?.eager_skills ?? PROCESS_SKILLS[agent] ?? []
+  return dedupeByName([...agentSkills, ...(laneConfig?.eager_skills ?? [])].map(toSkillRef))
 }
 
 export const laneOf = (prompt: string) => LANE_PROMPT.exec(prompt)?.[1]
