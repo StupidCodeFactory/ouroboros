@@ -60,6 +60,21 @@ An optional `effort` map sets the reasoning effort per workflow stage; the condu
 
 Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief, tasks }` (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
 
+## Runtime state
+
+ouroboros writes its runtime state under `.claude/ouroboros/` at the repository root. It is local to each checkout or worktree, so add the directory to the project's `.gitignore`:
+
+```gitignore
+.claude/ouroboros/
+```
+
+- `state.json`: the conductor's loop state (milestone, phases, current phase, pending launch, run in flight, escalations).
+- `results/`: the full result of every loop workflow, plus every oversized result of a plugin agent or loop workflow, each filed by task or tool-use id.
+- `eager/`: each role's eager skills block (`<role>.md`, `implementer-<lane>.md`), written before a loop workflow launches and read by its agents first.
+- `spawns.jsonl`: one line per agent spawn with the skills inlined and their hashes.
+
+The committed `.claude/ouroboros.json` is configuration, not runtime state; keep it under version control.
+
 ## Development
 
 Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh`, the plugin tests and `plugin validate`, and refuses the push on any failure.
