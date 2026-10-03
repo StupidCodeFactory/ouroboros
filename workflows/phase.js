@@ -176,6 +176,8 @@ const taskWaves = (tasks) => {
 const tasksToRetry = (entries, merge) =>
   entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
 
+const distinctFindings = (findings) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
+
 const checkpointVerdict = (checkpoint) => {
   if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
   const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
@@ -190,9 +192,17 @@ const implementPrompt = (task, isolated) =>
   `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
   `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
-const fixPrompt = (task, blocking) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n` +
-  `Fix these blocking findings:\n${JSON.stringify(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+const sliceText = task => (args.brief_dir ? `Brief slice: ${args.brief_dir}/${task.id}.md.\n` : '')
+
+const hunkLine = hunk => `- ${hunk.file}:${hunk.start}-${hunk.end}`
+
+const LEAN_FIX_RULE =
+  'Read only that plan section, the brief slice and the diff above; do not re-read the full brief, the whole plan or your skills, your agent memory carries the rest. Fix these findings and nothing else.'
+
+const fixPrompt = (entry, blocking) =>
+  `${lanePrefix()}${taskHeading(entry.task)}: fix round.\n${planReference(entry.task)}\n${sliceText(entry.task)}` +
+  `Task diff (commits ${entry.commits.join(', ') || 'none'}):\n${entry.hunks.map(hunkLine).join('\n')}\n${LEAN_FIX_RULE}\n` +
+  `Blocking findings:\n${JSON.stringify(distinctFindings(blocking))}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
 
@@ -239,12 +249,12 @@ const runWave = async wave => (wave.length === 1 ? [await implementInPlace(wave[
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
-const fix = (task, blocking, round) =>
-  agent(fixPrompt(task, blocking), {
+const fix = (entry, blocking, round) =>
+  agent(fixPrompt(entry, blocking), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Review',
-    label: `fix:${task.id}:r${round}`,
+    label: `fix:${entry.task.id}:r${round}`,
     effort: stageEffort(args.effort, 'fix'),
   })
 
@@ -299,7 +309,7 @@ const recordFix = (entry, fixed) => {
 const fixRound = async (entries, blocking, round) => {
   const fixHunks = []
   for (const entry of entries.filter(candidate => blockingOf(candidate, blocking).length)) {
-    fixHunks.push(...recordFix(entry, await fix(entry.task, blockingOf(entry, blocking), round)))
+    fixHunks.push(...recordFix(entry, await fix(entry, blockingOf(entry, blocking), round)))
   }
   return fixHunks
 }

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -194,4 +194,10 @@ test('every changed task the merge did not land is retried sequentially', () => 
   ]
   expect(tasksToRetry(entries, { merged: ['3'], conflicted: ['4'] }).map(entry => entry.task.id)).toEqual(['4'])
   expect(tasksToRetry(entries, null).map(entry => entry.task.id)).toEqual(['3', '4'])
+})
+
+test('one line three reviewers flagged reaches the fix agent once', () => {
+  const sameLine = ['reviewer', 'architect', 'auditor'].map(reviewer => ({ ...SINGLETON_FINDING, reviewer, task: '3' }))
+  const other = { ...SINGLETON_FINDING, line: 27, reviewer: 'auditor', task: '3' }
+  expect(distinctFindings([...sameLine, other])).toEqual([sameLine[0], other])
 })

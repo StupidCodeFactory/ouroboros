@@ -107,3 +107,5 @@ export const taskWaves = <T extends PlannedTask>(tasks: T[]): T[][] => {
 
 export const tasksToRetry = <E extends { task: { id: string }; changed: boolean }>(entries: E[], merge: Merge | null): E[] =>
   entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
+
+export const distinctFindings = (findings: ReviewFinding[]) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
