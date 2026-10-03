@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, followUpSection, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -157,4 +157,41 @@ test('a committed checkpoint on a green suite is checkpointed', () => {
 
 test('a checkpoint agent that returned nothing escalates', () => {
   expect(checkpointVerdict(null)).toEqual({ status: 'escalate', evidence: 'checkpoint agent returned nothing' })
+})
+
+const P0_TASKS = [
+  { id: '2', title: 'verify the backfill', touches: [] },
+  { id: '3', title: 'DashboardGaps delegates', touches: ['lib/price_feed/gap_source_planner.rb', 'lib/price_feed/backfill/dashboard_client.rb'] },
+  { id: '4', title: 'delete clean_unmonitored', touches: ['lib/tasks/db.rake', 'bin/clean_unmonitored'] },
+  { id: '17', title: 'one month-range helper', touches: ['lib/price_feed/chain_builder.rb', 'lib/price_feed/gap_source_planner.rb', 'lib/price_feed/month_bucket.rb'] },
+]
+
+const idsOf = (waves: Array<Array<{ id: string }>>) => waves.map(wave => wave.map(task => task.id))
+
+test('P0 tasks touching disjoint files share a wave; one that overlaps an earlier task waits for it', () => {
+  expect(idsOf(taskWaves(P0_TASKS))).toEqual([['2', '3', '4'], ['17']])
+})
+
+test('a task that names no touched files runs alone, after everything before it', () => {
+  const unknown = { id: '5', title: 'proto messages' }
+  expect(idsOf(taskWaves([P0_TASKS[1]!, unknown, P0_TASKS[2]!]))).toEqual([['3'], ['5'], ['4']])
+})
+
+test('a chain of overlaps runs in plan order', () => {
+  const tasks = [
+    { id: 'a', title: 'a', touches: ['x.rb'] },
+    { id: 'b', title: 'b', touches: ['x.rb', 'y.rb'] },
+    { id: 'c', title: 'c', touches: ['y.rb'] },
+  ]
+  expect(idsOf(taskWaves(tasks))).toEqual([['a'], ['b'], ['c']])
+})
+
+test('every changed task the merge did not land is retried sequentially', () => {
+  const entries = [
+    { task: { id: '3', title: '' }, changed: true },
+    { task: { id: '4', title: '' }, changed: true },
+    { task: { id: '2', title: '' }, changed: false },
+  ]
+  expect(tasksToRetry(entries, { merged: ['3'], conflicted: ['4'] }).map(entry => entry.task.id)).toEqual(['4'])
+  expect(tasksToRetry(entries, null).map(entry => entry.task.id)).toEqual(['3', '4'])
 })

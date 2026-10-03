@@ -81,3 +81,29 @@ export const checkpointVerdict = (checkpoint: Checkpoint | null) => {
   const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
   return { status, evidence: checkpoint.evidence }
 }
+
+export type PlannedTask = { id: string; title: string; touches?: string[] }
+export type Merge = { merged: string[]; conflicted: string[] }
+
+export const overlaps = (left: PlannedTask, right: PlannedTask) => {
+  if (left.touches === undefined || right.touches === undefined) return true
+  return left.touches.some(file => (right.touches ?? []).some(other => samePath(file, other)))
+}
+
+export const waveIndexes = (tasks: PlannedTask[]) => {
+  const indexes: number[] = []
+  tasks.forEach((task, position) => {
+    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
+    indexes.push(Math.max(0, ...after))
+  })
+  return indexes
+}
+
+export const taskWaves = <T extends PlannedTask>(tasks: T[]): T[][] => {
+  const indexes = waveIndexes(tasks)
+  const waveCount = Math.max(0, ...indexes.map(index => index + 1))
+  return Array.from({ length: waveCount }, (_, wave) => tasks.filter((_, position) => indexes[position] === wave))
+}
+
+export const tasksToRetry = <E extends { task: { id: string }; changed: boolean }>(entries: E[], merge: Merge | null): E[] =>
+  entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))

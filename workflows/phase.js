@@ -47,8 +47,18 @@ const IMPLEMENT_SCHEMA = {
       },
     },
     evidence: { type: 'string' },
+    branch: { type: 'string' },
   },
-  required: ['changed', 'commits', 'hunks', 'evidence'],
+  required: ['changed', 'commits', 'hunks', 'evidence', 'branch'],
+}
+
+const MERGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    merged: { type: 'array', items: { type: 'string' } },
+    conflicted: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['merged', 'conflicted'],
 }
 
 const CHECKPOINT_SCHEMA = {
@@ -92,7 +102,7 @@ const COMMIT_RULE = '\nNever start a commit subject with `phase(`: only the phas
 
 const RESULT_INSTRUCTION =
   '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
-  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file) and `evidence` (commands run and their decisive output).'
+  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output) and `branch` (the branch your commits are on).'
 
 const needsReview = (implemented) => implemented?.changed !== false
 
@@ -143,6 +153,29 @@ const triagePhaseFindings = (findings, diffs) => {
   }
 }
 
+const overlaps = (left, right) => {
+  if (left.touches === undefined || right.touches === undefined) return true
+  return left.touches.some(file => (right.touches ?? []).some(other => samePath(file, other)))
+}
+
+const waveIndexes = (tasks) => {
+  const indexes = []
+  tasks.forEach((task, position) => {
+    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
+    indexes.push(Math.max(0, ...after))
+  })
+  return indexes
+}
+
+const taskWaves = (tasks) => {
+  const indexes = waveIndexes(tasks)
+  const waveCount = Math.max(0, ...indexes.map(index => index + 1))
+  return Array.from({ length: waveCount }, (_, wave) => tasks.filter((_, position) => indexes[position] === wave))
+}
+
+const tasksToRetry = (entries, merge) =>
+  entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
+
 const checkpointVerdict = (checkpoint) => {
   if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
   const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
@@ -151,21 +184,60 @@ const checkpointVerdict = (checkpoint) => {
 
 const IMPLEMENT_INSTRUCTION = 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
 
-const implementPrompt = task =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of this phase: commit on its branch and never merge.'
+
+const implementPrompt = (task, isolated) =>
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
+  `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const fixPrompt = (task, blocking) =>
   `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n` +
   `Fix these blocking findings:\n${JSON.stringify(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
-const implement = task =>
-  agent(implementPrompt(task), {
+const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
+
+const implement = (task, isolated) =>
+  agent(implementPrompt(task, isolated), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Implement',
-    label: `implement:${task.id}`,
+    label: `implement:${task.id}${isolated ? ':worktree' : ''}`,
+    effort: stageEffort(args.effort, 'implement'),
+    ...isolationOf(isolated),
+  })
+
+const mergePrompt = entries =>
+  `${lanePrefix()}Merge these ${args.phase} task branches into the current branch in this order, one \`git merge --no-ff <branch>\` each:\n` +
+  `${entries.map(entry => `- task ${entry.task.id}: ${entry.branch}`).join('\n')}\n` +
+  'When a merge conflicts, run `git merge --abort`, never resolve it by hand, and go on with the next branch. ' +
+  'Return the task ids you merged in `merged` and those that conflicted in `conflicted`.'
+
+const mergeWave = entries =>
+  agent(mergePrompt(entries), {
+    agentType: ouroborosAgent('implementer'),
+    schema: MERGE_SCHEMA,
+    phase: 'Implement',
+    label: `merge:${entries.map(entry => entry.task.id).join(',')}`,
     effort: stageEffort(args.effort, 'implement'),
   })
+
+const NOTHING_MERGED = { merged: [], conflicted: [] }
+
+const implementInPlace = async task => entryOf(task, await implement(task, false))
+
+const runParallelWave = async wave => {
+  const implemented = await parallel(wave.map(task => () => implement(task, true)))
+  const isolated = implemented.map((result, position) => entryOf(wave[position], result))
+  const branches = isolated.filter(entry => entry.changed && entry.branch)
+  const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
+  const retried = []
+  for (const entry of tasksToRetry(isolated, merge)) retried.push(await implementInPlace(entry.task))
+  return isolated.map(entry => retried.find(retry => retry.task.id === entry.task.id) ?? entry)
+}
+
+const runWave = async wave => (wave.length === 1 ? [await implementInPlace(wave[0])] : runParallelWave(wave))
+
+const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
 const fix = (task, blocking, round) =>
   agent(fixPrompt(task, blocking), {
@@ -257,6 +329,7 @@ const entryOf = (task, implemented) => ({
   commits: implemented?.commits ?? [],
   hunks: implemented?.hunks ?? [],
   evidence: implemented?.evidence ?? 'implementer returned nothing',
+  branch: implemented?.branch ?? '',
 })
 
 const taskResult = (entry, outcome) => {
@@ -283,8 +356,9 @@ const checkpoint = () =>
 phase('Implement')
 const tasks = args.tasks ?? []
 if (!tasks.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
-const entries = []
-for (const task of tasks) entries.push(entryOf(task, await implement(task)))
+const implementedEntries = []
+for (const wave of taskWaves(tasks)) implementedEntries.push(...(await runWave(wave)))
+const entries = inPlanOrder(implementedEntries, tasks)
 
 phase('Review')
 const reviewed = entries.filter(entry => entry.changed)
