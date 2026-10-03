@@ -4,9 +4,12 @@ import { loopEventOf, isLoopNotification, verifiedCheckpoint } from './events'
 
 const PHASE_RUN = { id: 'wf-1', workflow: 'phase' }
 
-test('a notification is the loop\'s when it names the in-flight run or workflow', () => {
+test('a notification is the loop\'s only when it names the in-flight run id', () => {
   expect(isLoopNotification('Task wf-1 completed', PHASE_RUN)).toBe(true)
-  expect(isLoopNotification('Workflow ouroboros:phase finished', PHASE_RUN)).toBe(true)
+  expect(isLoopNotification('<task-id>wf-1</task-id>', PHASE_RUN)).toBe(true)
+  expect(isLoopNotification('Workflow ouroboros:phase finished', PHASE_RUN)).toBe(false)
+  expect(isLoopNotification('Agent "fix the phase checkpoint" finished', PHASE_RUN)).toBe(false)
+  expect(isLoopNotification('Task wf-10 completed', PHASE_RUN)).toBe(false)
   expect(isLoopNotification('Agent researcher finished', PHASE_RUN)).toBe(false)
   expect(isLoopNotification('anything', undefined)).toBe(false)
 })

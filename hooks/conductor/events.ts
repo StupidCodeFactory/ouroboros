@@ -18,12 +18,10 @@ export const workflowResultOf = (outputFileText: string): Record<string, unknown
   }
 }
 
-const namesWorkflow = (text: string, workflow: string) => new RegExp(`(^|[^\\w-])(?:[\\w-]+:)?${workflow}([^\\w-]|$)`).test(text)
+const escaped = (literal: string) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export const isLoopNotification = (text: string, run: Run | undefined) => {
-  if (run === undefined) return false
-  return text.includes(run.id) || namesWorkflow(text, bareName(run.workflow))
-}
+export const isLoopNotification = (text: string, run: Run | undefined) =>
+  run !== undefined && new RegExp(`(^|[^\\w-])${escaped(run.id)}([^\\w-]|$)`).test(text)
 
 const parseFrom = (text: string, start: number, end: number) => {
   try {
