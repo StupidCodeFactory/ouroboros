@@ -43,6 +43,9 @@ const eagerPreamble = file =>
 
 const draftReference = relative => `\`<drafts_dir from .claude/ouroboros.json>/${relative}\` in the main checkout`
 
+const TEST_NAMING =
+  'Name test files, describe blocks and examples after the domain behaviour they check, never after milestone, phase or task ids or names. '
+
 const goalLine = () => (args.goal ? `Goal: ${args.goal}.\n` : '')
 
 const briefPrompt = () =>
@@ -56,13 +59,14 @@ const planPrompt = brief =>
   eagerPreamble('architect.md') +
   `Milestone ${args.milestone}. Append \`## Part C: ${args.milestone} tasks\` to the plan ${draftReference(args.plan)} ` +
   'in the same format as its Part B: every task heading `### Task <id>: <title> (PN)` ends with its phase tag, every step is a `- [ ]` box. ' +
-  `Keep the existing parts untouched. Architect brief:\n${brief}\n` +
+  `Keep the existing parts untouched. ${TEST_NAMING}Architect brief:\n${brief}\n` +
   'Return the phases you tagged in order and how many tasks you added.'
 
 const checksPrompt = brief =>
   eagerPreamble('auditor.md') +
   `Milestone ${args.milestone}. From the spec ${draftReference(args.spec)} and this brief:\n${brief}\n` +
   'Write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
+  TEST_NAMING +
   'Return the check names and whether they are all red.'
 
 phase('Brief')

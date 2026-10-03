@@ -10,7 +10,7 @@ Track every step with the plan's checkboxes per the `checkbox-progress` skill: s
 
 ## Outside-in TDD
 
-1. Start with a failing acceptance test at the outer edge: end-to-end, an HTTP request test, or input-in → output-out through the real entry point.
+1. Start with a failing acceptance test at the outer edge: end-to-end, an HTTP request test, or input-in → output-out through the real entry point. Name test files, describe blocks and examples after the domain behaviour they check, never after the milestone, phase or task (see `code-style`).
 2. Work inward: write a red unit test that discovers each collaborator before its code exists. A double may stand in for an internal collaborator not built yet; replace it with the real class once built.
 3. Keep boundaries real: record and replay external HTTP instead of stubbing it, use the real datastores and infrastructure the code talks to, inject configuration instead of mutating the environment, and give each lane its own test database. The project's lane skills name the exact tools.
 4. Go green with small functions, early returns and typed names (see `code-style`).
