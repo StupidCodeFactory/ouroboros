@@ -49,7 +49,7 @@ const EAGER_DIR = '.claude/ouroboros/eager'
 const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status>',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -376,6 +376,24 @@ async function setField($: EngineInterface, state: LoopState, args: string) {
   return repaired($, state, setPosition(state, field, value))
 }
 
+const taskIdOfOutput = (outputFile: string) => (outputFile.split('/').pop() ?? '').replace(/\.output$/, '')
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+async function collect($: EngineInterface, state: LoopState, outputFile: string) {
+  if (outputFile === '' || !(await $.fs.exists(outputFile))) return 'usage: /ouroboros collect <output-file> (the <output-file> of the workflow notification)'
+  const taskId = taskIdOfOutput(outputFile)
+  if (state.run?.id === taskId) {
+    const { state: settled, note } = await conductLoopResult($, state, state.run, `<task-id>${taskId}</task-id><output-file>${outputFile}</output-file>`)
+    await deliverPendingLaunch($, settled)
+    return [`collected ${taskId}`, note].filter(Boolean).join(': ')
+  }
+  const json = workflowResultOf(await $.fs.read(outputFile))
+  const incidents = phaseIncidents(json)
+  await fileIncidents($, incidents, resultPhase(json, state))
+  return `${taskId} is not the run in flight: filed its ${plural(incidents.length, 'incident')}, state unchanged`
+}
+
 async function runConductorCommand($: EngineInterface, args: string) {
   const { head, rest } = splitFirstWord(args)
   const state = await readLoopState($)
@@ -385,6 +403,7 @@ async function runConductorCommand($: EngineInterface, args: string) {
   if (head === 'kickoff') return kickoff($, rest)
   if (head === 'adopt') return adopt($, state, rest)
   if (head === 'set') return setField($, state, rest)
+  if (head === 'collect') return collect($, state, rest)
   if (head !== 'pause') return OUROBOROS_COMMAND.description
   await writeLoopState($, { ...state, paused: true })
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'

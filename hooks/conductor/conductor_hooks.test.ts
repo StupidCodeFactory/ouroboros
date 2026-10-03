@@ -294,6 +294,35 @@ test('a workflow notification that arrives as a prompt is filed and dropped, sin
   expect(stateOn(disk)).toMatchObject({ status: 'retro', results: { P0: '.claude/ouroboros/results/wf-1.json' }, run: { workflow: 'retro' } })
 })
 
+const SKILL_GAP = { root_cause: 'skill-gap', skill: 'pipeline-invariants', blocking: false, summary: 'no spec checks the fail-loudly raise' }
+
+test('/ouroboros collect files a missed result of the in-flight run as if its notification had arrived', async ($, on) => {
+  const outputFile = '/tmp/tasks/wf-1.output'
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '1', status: 'done', findings: [SKILL_GAP] }] } })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight, '/repo/docs/drafts/plans/m1.md': PLAN, [outputFile]: output })
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
+  mock.clock(on, { now: Date.UTC(2026, 9, 3) })
+
+  const answered = await run($, `collect ${outputFile}`)
+
+  expect(answered.text).toContain('wf-1')
+  expect(disk.get('.claude/skills/pipeline-invariants/incidents.md')).toContain('no spec checks the fail-loudly raise')
+  expect(stateOn(disk)).toMatchObject({ status: 'retro', results: { P0: '.claude/ouroboros/results/wf-1.json' }, run: { workflow: 'retro' } })
+})
+
+test('/ouroboros collect of a run that is not in flight files only its incidents and leaves the state alone', async ($, on) => {
+  const outputFile = '/tmp/tasks/old-p0.output'
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '1', status: 'done', findings: [SKILL_GAP] }] } })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight, [outputFile]: output })
+  mock.clock(on, { now: Date.UTC(2026, 9, 3) })
+
+  const answered = await run($, `collect ${outputFile}`)
+
+  expect(answered.text).toBe('old-p0 is not the run in flight: filed its 1 incident, state unchanged')
+  expect(disk.get('.claude/skills/pipeline-invariants/incidents.md')).toContain('| P0 |')
+  expect(disk.get('.claude/ouroboros/state.json')).toBe(phaseInFlight)
+})
+
 test('follow-ups a phase raised outside a task diff are appended to the plan as unchecked boxes', async ($, on) => {
   const outputFile = '/tmp/tasks/wf-1.output'
   const followUp = { reviewer: 'reviewer', file: 'lib/shop/backfill/runner.rb', line: 163, summary: 'Untouched callers still reach the singleton through .instance.', blocking: true }
