@@ -3,6 +3,8 @@ import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
 import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
 import type { ActiveDrafts } from './drafts'
+import { briefFiles } from './conductor/briefs'
+import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
 import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, workflowCall } from './conductor/header'
@@ -269,8 +271,16 @@ async function runConductorCommand($: EngineInterface, args: string) {
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'
 }
 
+async function fileBriefSlices($: EngineInterface, milestone: string, slices: BriefSlices) {
+  const dir = await projectPath($, `${BRIEFS_DIR}/${milestone}`)
+  for (const file of briefFiles(slices)) await $.fs.write(`${dir}/${file.name}`, file.text)
+  return dir
+}
+
 async function withFiledBrief($: EngineInterface, milestone: string, event: LoopEvent): Promise<LoopEvent> {
-  if (event.type !== 'kickoff-done' || event.brief === '') return event
+  if (event.type !== 'kickoff-done') return event
+  if (event.slices !== undefined) return { ...event, brief_dir: await fileBriefSlices($, milestone, event.slices) }
+  if (event.brief === '') return event
   const briefPath = await projectPath($, `${BRIEFS_DIR}/${milestone}.md`)
   await $.fs.write(briefPath, event.brief)
   return { ...event, brief_path: briefPath }

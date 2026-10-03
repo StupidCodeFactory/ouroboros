@@ -15,6 +15,8 @@ export type LoopState = {
   drafts?: ActiveDrafts
   brief?: string
   brief_path?: string
+  brief_dir?: string
+  touches?: Record<string, string[]>
   run?: Run
   pending?: Launch
   paused?: boolean

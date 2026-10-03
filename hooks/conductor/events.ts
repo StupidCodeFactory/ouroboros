@@ -1,4 +1,5 @@
 import type { Run } from './state'
+import { briefSlicesOf } from './briefs'
 import type { LoopEvent } from './transitions'
 
 const PLUGIN_PREFIX = /^[\w-]+:/
@@ -58,9 +59,15 @@ export const kickoffDecisionsOf = (run: Run, json: Record<string, unknown> | und
   return json.decisions
 }
 
+const kickoffEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
+  const slices = briefSlicesOf(json)
+  if (slices !== undefined) return { type: 'kickoff-done', brief: '', slices }
+  return { type: 'kickoff-done', brief: typeof json?.brief === 'string' ? json.brief : '' }
+}
+
 export const loopEventOf = (text: string, resultPath: string, run: Run, currentPhase: string | null, json = embeddedJson(text)): LoopEvent => {
   const workflow = bareName(run.workflow)
-  if (workflow === 'milestone-kickoff') return { type: 'kickoff-done', brief: typeof json?.brief === 'string' ? json.brief : '' }
+  if (workflow === 'milestone-kickoff') return kickoffEvent(json)
   if (workflow === 'retro') return { type: 'retro-done' }
   if (workflow === 'milestone-exit') return exitEvent(json)
   return phaseEvent(json, currentPhase, resultPath)

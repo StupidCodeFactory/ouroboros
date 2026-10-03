@@ -1,20 +1,32 @@
 import { firstUncheckedBox, phaseTasks } from '../drafts'
+import type { PhaseTask } from '../drafts'
+import { touchesByTask } from './briefs'
+import type { BriefSlices } from './briefs'
 import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
-  | { type: 'kickoff-done'; brief: string; brief_path?: string }
+  | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string }
   | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
 export type Action = { state: LoopState; launch?: Launch; notify?: string }
 
-const briefArg = (state: LoopState) => (state.brief_path === undefined ? { brief: state.brief ?? '' } : { brief_path: state.brief_path })
+const briefArg = (state: LoopState) => {
+  if (state.brief_dir !== undefined) return { brief_dir: state.brief_dir }
+  if (state.brief_path !== undefined) return { brief_path: state.brief_path }
+  return { brief: state.brief ?? '' }
+}
+
+const withTouches = (task: PhaseTask, touches: LoopState['touches']) => {
+  const files = touches?.[task.id]
+  return files === undefined ? task : { ...task, touches: files }
+}
 
 const phaseArgs = (state: LoopState, phase: string, planText: string | undefined) => {
   const base = { milestone: state.milestone, phase, ...briefArg(state) }
   if (planText === undefined) return base
-  return { ...base, tasks: phaseTasks(planText, phase) }
+  return { ...base, tasks: phaseTasks(planText, phase).map(task => withTouches(task, state.touches)) }
 }
 
 const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined): Launch => ({ workflow: 'phase', args: phaseArgs(state, phase, planText) })
@@ -38,8 +50,11 @@ const launchPhase = (state: LoopState, phase: string, planText: string | undefin
   launch: phaseLaunch(state, phase, planText),
 })
 
-const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>): LoopState =>
-  event.brief_path === undefined ? { ...state, brief: event.brief } : { ...state, brief_path: event.brief_path }
+const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>): LoopState => {
+  if (event.slices !== undefined && event.brief_dir !== undefined) return { ...state, brief_dir: event.brief_dir, touches: touchesByTask(event.slices) }
+  if (event.brief_path !== undefined) return { ...state, brief_path: event.brief_path }
+  return { ...state, brief: event.brief }
+}
 
 const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>, planText: string | undefined): Action => {
   if (state.status !== 'kickoff') return { state }

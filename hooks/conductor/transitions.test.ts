@@ -20,6 +20,22 @@ test('a finished kickoff with its brief filed passes the brief path, not the bri
   expect(launch).toEqual({ workflow: 'phase', args: { milestone: 'M1', phase: 'P0', brief_path: '/repo/.claude/ouroboros/briefs/M1.md' } })
 })
 
+test('a kickoff with a sliced brief passes the brief directory and each task\'s touches to the phase', () => {
+  const slices = { common: 'Forbidden: .instance callers.', tasks: [{ id: '1', guidance: 'Put it in lib/a.rb.', touches: ['lib/a.rb'] }] }
+  const { state, launch } = nextAction(
+    { ...base, current: null, status: 'kickoff' },
+    { type: 'kickoff-done', brief: '', slices, brief_dir: '/repo/.claude/ouroboros/briefs/M1' },
+    PLAN,
+  )
+  expect(state).toMatchObject({ brief_dir: '/repo/.claude/ouroboros/briefs/M1', touches: { '1': ['lib/a.rb'] } })
+  expect(launch?.args).toEqual({
+    milestone: 'M1',
+    phase: 'P0',
+    brief_dir: '/repo/.claude/ouroboros/briefs/M1',
+    tasks: [{ id: '1', title: 'a', line: 1, unchecked: 0, touches: ['lib/a.rb'] }],
+  })
+})
+
 test('a checkpointed phase starts the retro', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('retro')

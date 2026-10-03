@@ -218,6 +218,23 @@ test('the real kickoff notification reads the full result from its output file a
   expect(disk.get('.claude/ouroboros/results/wpsy5r9zt.json')).toContain('"red":true')
 })
 
+test('a sliced kickoff brief is filed per task and the phase gets the directory and each task\'s touches', async ($, on) => {
+  const outputFile = '/tmp/tasks/sliced.output'
+  const brief = { common: 'Forbidden: new .instance callers.', tasks: [{ id: '1', guidance: 'Put it in lib/a.rb.', touches: ['lib/a.rb'] }] }
+  const disk = worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': kickoffInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [outputFile]: JSON.stringify({ result: { brief, decisions: [], phases: ['P0', 'P1'], checks: [], red: true } }),
+  })
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-notification>\n<task-id>wpsy5r9zt</task-id>\n<output-file>${outputFile}</output-file>\n<status>completed</status>\n</task-notification>` })
+
+  expect(disk.get('.claude/ouroboros/briefs/M1/common.md')).toBe('Forbidden: new .instance callers.\n')
+  expect(disk.get('.claude/ouroboros/briefs/M1/1.md')).toBe('Put it in lib/a.rb.\n\nTouches:\n- lib/a.rb\n')
+  expect(stateOn(disk).pending.args).toMatchObject({ brief_dir: '/repo/.git/.claude/ouroboros/briefs/M1', tasks: [{ id: '1', touches: ['lib/a.rb'] }] })
+})
+
 test('the kickoff decisions open Proposed ADRs through the scribe, since no architect Agent call carries them', async ($, on) => {
   worldBeneath(on, {
     '.claude/ouroboros.json': CONFIG,

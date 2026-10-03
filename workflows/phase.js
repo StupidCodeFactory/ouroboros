@@ -81,7 +81,11 @@ const taskHeading = task => `Milestone ${args.milestone} ${args.phase}, task ${t
 
 const planReference = task => (task.line ? `Plan section: the "### Task ${task.id}" heading at line ${task.line} of the active plan.` : `Plan section: task ${task.id}.`)
 
-const briefText = () => (args.brief_path ? `Architect brief: read ${args.brief_path} first.` : `Architect brief:\n${args.brief}`)
+const briefText = task => {
+  if (args.brief_dir) return `Architect brief: read ${args.brief_dir}/common.md and ${args.brief_dir}/${task.id}.md first.`
+  if (args.brief_path) return `Architect brief: read ${args.brief_path} first.`
+  return `Architect brief:\n${args.brief}`
+}
 
 const fixInstruction = blocking =>
   blocking.length ? `Fix these blocking findings:\n${JSON.stringify(blocking)}` : 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
@@ -136,7 +140,7 @@ const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) =
 }
 
 const implementPrompt = (task, blocking) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText()}\n${fixInstruction(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${fixInstruction(blocking)}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const reviewPrompt = (reviewer, task) =>
   eagerPreamble(`${reviewer}.md`) +
