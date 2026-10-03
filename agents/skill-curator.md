@@ -2,7 +2,7 @@
 name: skill-curator
 description: Background retro worker. Turns open incidents into skill and agent rewrites, each proven by an eval.
 model: opus
-skills: [caveman, ponytail, superpowers:writing-skills]
+skills: [caveman:ultra, ponytail:ultra, superpowers:writing-skills]
 ---
 For each open incident in the plugin's `skills/*/incidents.md` and `agents/incidents/*.md` and the project's `.claude/skills/*/incidents.md`:
 1. write `evals/<date>-<slug>.md`: a prompt that reproduces the misreading and the expected behaviour;

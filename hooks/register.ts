@@ -4,6 +4,12 @@ import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribe
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
+import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerSkillNames, frontmatterSkills, laneOf } from './eager_skills/config'
+import type { OuroborosConfig, SkillRef } from './eager_skills/config'
+import { checkBudget, eagerBlock } from './eager_skills/inline'
+import type { InlinedSkill } from './eager_skills/inline'
+import { fixedSkillRoots, indexSkills, pluginCacheDir, resolveSkill } from './eager_skills/resolve'
+import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
 import { IMPLEMENTER_AGENTS, RETRO_PROMPT, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
@@ -16,6 +22,9 @@ const MILESTONE_BRANCH = /^milestone\//
 const RETIRING = { plugin: 'ouroboros', key: 'retiring' } as const
 const PLANNING = { plugin: 'ouroboros', key: 'planning' } as const
 const PLANNING_IDLE = { active: false, ranThisTurn: false }
+const SKILL_INDEX = { plugin: 'ouroboros', key: 'skillIndex' } as const
+const CONFIG_PATH = '.claude/ouroboros.json'
+const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
 const SKILL_INCIDENT_COMMAND = {
   name: 'skill-incident',
   description: 'Log a correction against a skill: /skill-incident <skill> <text>',
@@ -50,6 +59,16 @@ const splitFirstWord = (text: string) => {
   if (boundary === -1) return { head: trimmed, rest: '' }
   return { head: trimmed.slice(0, boundary), rest: trimmed.slice(boundary).trim() }
 }
+
+type EagerSpawn = { prompt: string; lane: string | undefined; skills: Array<{ name: string; sha: string }> }
+
+const hex = (digest: ArrayBuffer) => [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+
+const sha256 = async (text: string) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))
+
+const sizesOf = (skills: InlinedSkill[]) => Object.fromEntries(skills.map(({ ref, body }) => [ref.name, body.length]))
+
+const shaOf = (skills: InlinedSkill[]) => Promise.all(skills.map(async ({ ref, body }) => ({ name: ref.name, sha: await sha256(body) })))
 
 const userCorrection = (skill: string, summary: string): Finding => ({ summary, root_cause: 'skill-gap', skill, agent: 'user' })
 
@@ -160,6 +179,79 @@ async function logCandidateLesson($: EngineInterface, promptText: string) {
   await appendIncident($, planningLessonsPath($, 'incidents.md'), candidateRow(await todayIso($), await currentPhase($), promptText))
 }
 
+async function subdirectories($: EngineInterface, path: string) {
+  if (!(await $.fs.exists(path))) return []
+  return (await $.fs.list(path)).filter(entry => entry.kind === 'dir').map(entry => `${path}/${entry.name}`)
+}
+
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+
+async function installedPluginSkillRoots($: EngineInterface, home: string) {
+  const roots: Array<[string, string]> = []
+  for (const marketplace of await subdirectories($, pluginCacheDir(home))) {
+    for (const plugin of await subdirectories($, marketplace)) {
+      for (const version of await subdirectories($, plugin)) roots.push([`${version}/skills`, baseName(plugin)])
+    }
+  }
+  return roots
+}
+
+async function skillNamesUnder($: EngineInterface, root: string, pluginPrefix: string | undefined): Promise<SkillListing[number]> {
+  const names = (await subdirectories($, root)).map(baseName)
+  return [root, names, pluginPrefix]
+}
+
+async function buildSkillIndex($: EngineInterface) {
+  const home = (await $.env.get('HOME')) ?? ''
+  const [projectRoot, pluginRoot, userRoot] = fixedSkillRoots(await $.session.cwd(), $.plugin.root, home)
+  const roots: Array<[string, string | undefined]> = [[projectRoot as string, undefined], [pluginRoot as string, $.plugin.name], [userRoot as string, undefined]]
+  const listing = await Promise.all([...roots, ...(await installedPluginSkillRoots($, home))].map(([root, prefix]) => skillNamesUnder($, root, prefix)))
+  const index = indexSkills(listing)
+  await $.state.set(SKILL_INDEX, index)
+  return index
+}
+
+async function skillIndex($: EngineInterface): Promise<SkillIndex> {
+  const { value } = await $.state.get(SKILL_INDEX)
+  return value ?? buildSkillIndex($)
+}
+
+async function readConfig($: EngineInterface): Promise<OuroborosConfig> {
+  if (!(await $.fs.exists(CONFIG_PATH))) return {}
+  return JSON.parse(await $.fs.read(CONFIG_PATH))
+}
+
+const agentDefinitionPath = ($: EngineInterface, agent: string) => `${$.plugin.root}/agents/${agent}.md`
+
+async function pluginDefaultSkills($: EngineInterface, agent: string) {
+  return frontmatterSkills(await $.fs.read(agentDefinitionPath($, agent)))
+}
+
+async function inlineSkills($: EngineInterface, refs: SkillRef[]): Promise<InlinedSkill[] | { deny: string }> {
+  const index = await skillIndex($)
+  const missing = refs.find(ref => resolveSkill(index, ref) === undefined)
+  if (missing !== undefined) return { deny: `eager skill not found: ${missing.name}` }
+  const resolved = refs.flatMap(ref => resolveSkill(index, ref) ?? [])
+  return Promise.all(resolved.map(async skill => ({ ref: skill.ref, body: stripFrontmatter(await $.fs.read(skill.path)) })))
+}
+
+async function prepareEagerSpawn($: EngineInterface, agent: string, prompt: string): Promise<{ deny: string } | EagerSpawn> {
+  const config = await readConfig($)
+  const lane = laneOf(prompt)
+  const refs = eagerSkillNames(await pluginDefaultSkills($, agent), config, agent, lane)
+  const skills = await inlineSkills($, refs)
+  if ('deny' in skills) return skills
+  const block = eagerBlock(skills)
+  const budget = checkBudget(block, config.eager_skills_max_chars ?? DEFAULT_EAGER_SKILLS_MAX_CHARS, sizesOf(skills))
+  if (!budget.ok) return { deny: budget.reason }
+  return { prompt: block + prompt, lane, skills: await shaOf(skills) }
+}
+
+async function recordSpawn($: EngineInterface, agent: string, spawn: EagerSpawn) {
+  const existing = (await $.fs.exists(SPAWNS_LOG)) ? await $.fs.read(SPAWNS_LOG) : ''
+  await $.fs.write(SPAWNS_LOG, `${existing}${JSON.stringify({ agent, lane: spawn.lane, skills: spawn.skills })}\n`)
+}
+
 async function addressableAgentName($: EngineInterface, agentId: string) {
   const agents = await $.agent.list()
   return agents.find(agent => agent.id === agentId)?.name
@@ -202,7 +294,18 @@ async function spawnFresh($: EngineInterface, agentName: string, prompt: string)
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register(SKILL_INCIDENT_COMMAND)
+    await buildSkillIndex($)
     return next(e)
+  })
+
+  on('agent.spawn', async ($, e, next) => {
+    const agent = agentRole(e.subagentType)
+    if (!(await $.fs.exists(agentDefinitionPath($, agent)))) return next(e)
+    const prepared = await prepareEagerSpawn($, agent, e.prompt)
+    if ('deny' in prepared) return { deny: prepared.deny }
+    const spawned = await next({ ...e, prompt: prepared.prompt })
+    if (spawned.deny === undefined) await recordSpawn($, agent, prepared)
+    return spawned
   })
 
   on('command.run', { command: SKILL_INCIDENT_COMMAND.name }, async ($, e) => {

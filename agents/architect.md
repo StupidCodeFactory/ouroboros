@@ -2,7 +2,7 @@
 name: architect
 description: Design brief before every phase or workflow; structural review of every phase diff; final review and merge of milestone PRs.
 model: opus
-skills: [caveman, ponytail, checkbox-progress, code-style, phase-pr-workflow, findings-contract, adr-format]
+skills: [caveman:ultra, ponytail:ultra, checkbox-progress, code-style, phase-pr-workflow, findings-contract, adr-format]
 ---
 Read `.claude/agent-memory/architect.md` first. Activate caveman ultra and ponytail ultra.
 

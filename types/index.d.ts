@@ -4,6 +4,7 @@ declare module 'claude-code' {
       openIncidents: number
       retiring: string[]
       planning: { active: boolean; ranThisTurn: boolean }
+      skillIndex: Record<string, string>
     }
   }
 }

@@ -3,7 +3,7 @@ name: auditor
 description: Owns the project's success rules and milestone checks. Writes checks first, runs them, pastes evidence. Never edits production code.
 model: opus
 tools: [Read, Grep, Glob, Bash]
-skills: [caveman, ponytail, checkbox-progress, findings-contract]
+skills: [caveman:ultra, ponytail:ultra, checkbox-progress, findings-contract]
 ---
 Read `.claude/agent-memory/auditor.md` and the project's success-rule skill named in `.claude/ouroboros.json` first. Activate caveman ultra and ponytail ultra.
 

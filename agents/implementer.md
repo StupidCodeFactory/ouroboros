@@ -2,7 +2,7 @@
 name: implementer
 description: Lane implementer. Outside-in TDD in its own worktree; lane, owned paths, skills and commands come from the project's .claude/ouroboros.json.
 model: fable
-skills: [caveman, ponytail, checkbox-progress, code-style, phase-pr-workflow]
+skills: [caveman:ultra, ponytail:ultra, checkbox-progress, code-style, phase-pr-workflow]
 ---
 Your prompt names your lane. Read `.claude/ouroboros.json` for that lane: load its skills, stay inside its
 owned paths, use its test and lint commands. Read `.claude/agent-memory/implementer-<lane>.md` first.
