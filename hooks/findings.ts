@@ -29,7 +29,7 @@ const asIncident = (raw: RawFinding): Finding | undefined => {
   const rootCause = PROCESS_ROOT_CAUSES.find(cause => cause === raw.root_cause)
   const skill = textOr(raw.skill)
   const agent = textOr(raw.agent)
-  if (rootCause === undefined || (skill === undefined && agent === undefined)) return undefined
+  if (rootCause === undefined) return undefined
   return {
     summary: String(raw.summary ?? ''),
     root_cause: rootCause,
@@ -47,7 +47,9 @@ const taskFindings = (json: Record<string, unknown> | undefined): RawFinding[] =
   return (json.tasks as Array<{ findings?: unknown }>).flatMap(task => (Array.isArray(task.findings) ? (task.findings as RawFinding[]) : []))
 }
 
+const ownFindings = (json: Record<string, unknown> | undefined): RawFinding[] => (Array.isArray(json?.findings) ? (json.findings as RawFinding[]) : [])
+
 export const phaseIncidents = (json: Record<string, unknown> | undefined): Finding[] => {
-  const incidents = taskFindings(json).flatMap(raw => asIncident(raw) ?? [])
+  const incidents = [...ownFindings(json), ...taskFindings(json)].flatMap(raw => asIncident(raw) ?? [])
   return incidents.filter((finding, position) => incidents.findIndex(other => incidentKey(other) === incidentKey(finding)) === position)
 }

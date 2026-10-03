@@ -15,7 +15,18 @@ const prefixOf = (name: string) => PLUGIN_PREFIX.exec(name)?.[1]
 
 const bareName = (name: string) => name.slice(name.lastIndexOf(':') + 1)
 
-const withoutLane = (agent: string, pluginAgents: string[]) => pluginAgents.find(known => agent === known || agent.startsWith(`${known}-`)) ?? agent
+const AGENT_PLAYING = { planner: 'architect', curator: 'skill-curator' } as Record<string, string>
+
+const knownAgentIn = (part: string, pluginAgents: string[]) => pluginAgents.find(known => part === known || part.startsWith(`${known}-`))
+
+const pluginAgentName = (agent: string, pluginAgents: string[]) => {
+  const parts = agent.split(':').map(part => AGENT_PLAYING[part] ?? part)
+  for (const part of parts) {
+    const known = knownAgentIn(part, pluginAgents)
+    if (known !== undefined) return known
+  }
+  return parts[parts.length - 1] ?? agent
+}
 
 const relativeTo = (projectRoot: string, path: string) => (path.startsWith(`${projectRoot}/`) ? path.slice(projectRoot.length + 1) : path)
 
@@ -40,13 +51,19 @@ const skillIncidentPath = (skill: string, places: IncidentPlaces) => {
 }
 
 const agentIncidentPath = (agent: string, places: IncidentPlaces) => {
-  const name = withoutLane(bareName(agent), places.pluginAgents)
+  const name = pluginAgentName(agent, places.pluginAgents)
   if (!places.pluginAgents.includes(name)) return `${pluginIncidentsDir(places, places.pluginName)}/agents/${name}.md`
   return ownPluginPath(places, 'agents', name)
 }
 
-export const incidentLogPath = (finding: Finding, places: IncidentPlaces) =>
-  finding.root_cause === 'agent-behaviour' ? agentIncidentPath(finding.agent ?? '', places) : skillIncidentPath(finding.skill ?? '', places)
+const unownedPath = (places: IncidentPlaces) => `${pluginIncidentsDir(places, places.pluginName)}/unowned.md`
+
+export const incidentLogPath = (finding: Finding, places: IncidentPlaces) => {
+  const byAgent = finding.agent === undefined ? undefined : agentIncidentPath(finding.agent, places)
+  const bySkill = finding.skill === undefined ? undefined : skillIncidentPath(finding.skill, places)
+  const owned = finding.root_cause === 'agent-behaviour' ? (byAgent ?? bySkill) : (bySkill ?? byAgent)
+  return owned ?? unownedPath(places)
+}
 
 const isOpenSkillIncident = (row: string) => row.includes('| open |') && !row.includes('| plan-drift |')
 

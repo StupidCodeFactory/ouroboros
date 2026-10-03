@@ -50,7 +50,19 @@ test('another plugin\'s skill is never written in place', () => {
 test('an agent incident names the plugin agent without its lane', () => {
   expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'implementer-ruby' }, WRITABLE)).toBe('/code/ouroboros/agents/incidents/implementer.md')
   expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'ouroboros:auditor' }, INSTALLED)).toBe('/work/shop/.claude/ouroboros/plugin-incidents/ouroboros/agents/auditor.md')
-  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'planner' }, WRITABLE)).toBe('/work/shop/.claude/ouroboros/plugin-incidents/ouroboros/agents/planner.md')
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'implementer:ruby' }, WRITABLE)).toBe('/code/ouroboros/agents/incidents/implementer.md')
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'architect-m1' }, WRITABLE)).toBe('/code/ouroboros/agents/incidents/architect.md')
+})
+
+test('the planner and the curator are named by the plugin agent that plays them', () => {
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'planner' }, WRITABLE)).toBe('/code/ouroboros/agents/incidents/architect.md')
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'curator' }, { ...WRITABLE, pluginAgents: [...WRITABLE.pluginAgents, 'skill-curator'] })).toBe('/code/ouroboros/agents/incidents/skill-curator.md')
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour', agent: 'researcher' }, WRITABLE)).toBe('/work/shop/.claude/ouroboros/plugin-incidents/ouroboros/agents/researcher.md')
+})
+
+test('a process finding that names only an agent goes to that agent, one that names nobody to the unowned log', () => {
+  expect(incidentLogPath({ summary: 's', root_cause: 'skill-gap', agent: 'auditor' }, WRITABLE)).toBe('/code/ouroboros/agents/incidents/auditor.md')
+  expect(incidentLogPath({ summary: 's', root_cause: 'agent-behaviour' }, WRITABLE)).toBe('/work/shop/.claude/ouroboros/plugin-incidents/ouroboros/unowned.md')
 })
 
 test('an incident row names its evidence relative to the project, never by an absolute home path', () => {
@@ -106,12 +118,18 @@ const P0_RESULT = {
   ],
 }
 
-test('a phase result yields every owned skill or agent finding once, never code bugs or ownerless notes', () => {
+test('a phase result yields every process finding once, owned or not, never code bugs', () => {
   expect(phaseIncidents(P0_RESULT).map(finding => finding.summary)).toEqual([
     P0_ARCHITECT_PLANNING_GAP.summary,
     P0_AUDITOR_INVARIANT_GAP.summary,
     P0_AUDITOR_STALE_MEMORY.summary,
+    P0_PASSING_NOTE.summary,
   ])
+})
+
+test('a workflow result\'s own findings count as well as its tasks\'', () => {
+  const kickoff = { brief: 'b', findings: [P0_AUDITOR_STALE_MEMORY, P0_CODE_BUG] }
+  expect(phaseIncidents(kickoff).map(finding => finding.summary)).toEqual([P0_AUDITOR_STALE_MEMORY.summary])
 })
 
 test('a result without tasks yields nothing', () => {
