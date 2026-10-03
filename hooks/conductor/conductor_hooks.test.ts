@@ -1,11 +1,15 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 const COMPOSER = { kind: 'composer' as const }
 const PRESENTATION = { isFullscreen: false, columns: 80 }
 const NOTIFICATION = { kind: 'task-notification' as const }
-const CONFIG = JSON.stringify({ drafts_dir: 'docs/drafts' })
+const NO_EAGER_SKILLS = { eager_skills: [] }
+const CONFIG = JSON.stringify({
+  drafts_dir: 'docs/drafts',
+  agents: { architect: NO_EAGER_SKILLS, auditor: NO_EAGER_SKILLS, reviewer: NO_EAGER_SKILLS, implementer: NO_EAGER_SKILLS },
+})
 const PLAN = ['### Task 1: a (P0)', '- [x] done', '### Task 2: b (P1)', '- [ ] open'].join('\n')
 
 const run = ($: Parameters<TestBody>[0], args: string) =>
@@ -13,6 +17,7 @@ const run = ($: Parameters<TestBody>[0], args: string) =>
 
 const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []) => {
   const disk = new Map(Object.entries(files))
+  mock.env(on, { HOME: '/home' })
   const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
   on('process.run', () => ({ value: { exitCode: 0, stdout: '/repo/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
@@ -132,7 +137,7 @@ test('/ouroboros kickoff passes the configured per-stage effort map in the launc
 
 test('the Workflow call the model makes records the run and clears the pending launch', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
-  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
   on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-k' } }))
 
   await $.tool.call({ tool: 'Workflow', name: 'milestone-kickoff', args: pending.args })
@@ -180,7 +185,7 @@ const kickoffInFlight = JSON.stringify({
 
 test('the plugin-prefixed Workflow call the model makes records the run', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
-  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
   on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wpsy5r9zt', workflowName: 'milestone-kickoff' } }))
 
   await $.tool.call({ tool: 'Workflow', name: 'ouroboros:milestone-kickoff', args: pending.args })
@@ -213,7 +218,7 @@ test('the real kickoff notification reads the full result from its output file a
 
 test('a missing workflow leaves the launch pending and nothing throws', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
-  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
   on('tool.call', { tool: 'Workflow' }, () => ({ deny: 'no workflow named milestone-kickoff' }))
 
   const answered = await $.tool.call({ tool: 'Workflow', name: 'milestone-kickoff', args: pending.args })

@@ -41,6 +41,11 @@ const REVIEWERS = [
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
+const eagerPreamble = file =>
+  args.eager_dir ? `Before anything else, read ${args.eager_dir}/${file} in full and follow the skills it holds.\n` : ''
+
+const implementerFile = () => (args.lane ? `implementer-${args.lane}.md` : 'implementer.md')
+
 const lanePrefix = () => (args.lane ? `Lane ${args.lane}. ` : '')
 
 const taskHeading = task => `Milestone ${args.milestone} ${args.phase}, task ${task.id}: ${task.title}`
@@ -51,9 +56,10 @@ const fixInstruction = blocking =>
   blocking.length ? `Fix these blocking findings:\n${JSON.stringify(blocking)}` : 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
 
 const implementPrompt = (task, blocking) =>
-  `${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\nArchitect brief:\n${args.brief}\n${fixInstruction(blocking)}`
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\nArchitect brief:\n${args.brief}\n${fixInstruction(blocking)}`
 
 const reviewPrompt = (reviewer, task) =>
+  eagerPreamble(`${reviewer}.md`) +
   `Review the diff for ${args.phase} task ${task.id} (${task.title}) on the current branch as the ${reviewer}. ` +
   'Return every finding with its root cause; mark blocking ones.'
 
@@ -95,7 +101,7 @@ const runTask = async task => {
 }
 
 const checkpointPrompt = () =>
-  `${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
+  `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `of every lane in .claude/ouroboros.json${args.lane ? ` (at least lane ${args.lane})` : ''}. ` +
   `Then commit with subject "phase(${args.phase}): <summary>". Return the evidence.`
 

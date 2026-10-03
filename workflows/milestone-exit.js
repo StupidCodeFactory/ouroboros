@@ -35,17 +35,23 @@ const MERGE_SCHEMA = {
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
+const eagerPreamble = file =>
+  args.eager_dir ? `Before anything else, read ${args.eager_dir}/${file} in full and follow the skills it holds.\n` : ''
+
 const branchName = () => args.branch ?? 'the current branch'
 
 const checksPrompt = () =>
+  eagerPreamble('auditor.md') +
   `Milestone ${args.milestone} exit on ${branchName()}. Run every milestone check and every lane's full test and lint commands from .claude/ouroboros.json. ` +
   'Return whether all are green and the evidence (commands and their output tails).'
 
 const pullRequestPrompt = evidence =>
+  eagerPreamble('implementer.md') +
   `Milestone ${args.milestone}: push ${branchName()} and open the pull request against the default branch, ` +
   `following the repository's branch and PR conventions in .claude/ouroboros.json. Put this evidence in the description:\n${evidence}\nReturn the PR url.`
 
 const mergePrompt = prUrl =>
+  eagerPreamble('architect.md') +
   `Milestone ${args.milestone}: final review of ${prUrl}. Check every gate: milestone checks green, CI green, no open incidents, ` +
   'every plan box for this milestone ticked, decisions recorded. Merge only if every gate passes; otherwise name the failing gate and leave it open.'
 

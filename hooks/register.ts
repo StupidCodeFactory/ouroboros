@@ -14,7 +14,7 @@ import type { Action } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
-import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerSkillNames, laneOf } from './eager_skills/config'
+import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneOf, workflowSeats } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
 import type { InlinedSkill } from './eager_skills/inline'
@@ -36,6 +36,7 @@ const SKILL_INDEX = { plugin: 'ouroboros', key: 'skillIndex' } as const
 const CONFIG_PATH = '.claude/ouroboros.json'
 const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
 const RESULTS_DIR = '.claude/ouroboros/results'
+const EAGER_DIR = '.claude/ouroboros/eager'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
   description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal]',
@@ -54,6 +55,8 @@ const agentRole = (subagentType: string) => subagentType.slice(subagentType.last
 const isLoopAgent = ($: EngineInterface, subagentType: string | undefined) => (subagentType ?? '').startsWith(`${$.plugin.name}:`)
 
 const isLoopWorkflow = (name: string | undefined) => LOOP_WORKFLOWS.has(bareName(name ?? ''))
+
+const withEagerDir = (args: unknown, eagerDir: string) => ({ ...(args as Record<string, unknown> | undefined), eager_dir: eagerDir })
 
 const agentText = (result: unknown) => {
   const content = (result as { content?: Array<{ text?: string }> } | undefined)?.content ?? []
@@ -371,7 +374,7 @@ async function skillNamesUnder($: EngineInterface, root: string, names: string[]
 
 async function buildSkillIndex($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
-  const [projectRoot, pluginRoot, userRoot] = fixedSkillRoots(await $.session.cwd(), $.plugin.root, home)
+  const [projectRoot, pluginRoot, userRoot] = fixedSkillRoots(await repositoryRoot($), $.plugin.root, home)
   const roots: Array<[string, string[] | undefined, string | undefined]> = [
     [projectRoot as string, undefined, undefined],
     [pluginRoot as string, undefined, $.plugin.name],
@@ -416,16 +419,31 @@ async function inlineSkills($: EngineInterface, refs: SkillRef[]): Promise<Inlin
   return Promise.all(resolved.map(async skill => ({ ref: skill.ref, body: stripFrontmatter(await $.fs.read(skill.path)) })))
 }
 
-async function prepareEagerSpawn($: EngineInterface, agent: string, prompt: string): Promise<{ deny: string } | EagerSpawn> {
-  const config = await readConfig($)
-  const lane = laneOf(prompt)
-  const refs = eagerSkillNames(config, agent, lane)
-  const skills = await inlineSkills($, refs)
+async function eagerSkillsFor($: EngineInterface, config: OuroborosConfig, agent: string, lane: string | undefined) {
+  const skills = await inlineSkills($, eagerSkillNames(config, agent, lane))
   if ('deny' in skills) return skills
   const block = eagerBlock(skills)
   const budget = checkBudget(block, config.eager_skills_max_chars ?? DEFAULT_EAGER_SKILLS_MAX_CHARS, sizesOf(skills))
   if (!budget.ok) return { deny: budget.reason }
-  return { prompt: block + prompt, lane, skills: await shaOf(skills) }
+  return { block, skills }
+}
+
+async function prepareEagerSpawn($: EngineInterface, agent: string, prompt: string): Promise<{ deny: string } | EagerSpawn> {
+  const lane = laneOf(prompt)
+  const eager = await eagerSkillsFor($, await readConfig($), agent, lane)
+  if ('deny' in eager) return eager
+  return { prompt: eager.block + prompt, lane, skills: await shaOf(eager.skills) }
+}
+
+async function writeEagerFiles($: EngineInterface): Promise<{ deny: string } | { dir: string }> {
+  const config = await readConfig($)
+  const dir = await projectPath($, EAGER_DIR)
+  for (const seat of workflowSeats(config)) {
+    const eager = await eagerSkillsFor($, config, seat.role, seat.lane)
+    if ('deny' in eager) return eager
+    await $.fs.write(`${dir}/${eagerFileName(seat)}`, eager.block)
+  }
+  return { dir }
 }
 
 async function recordSpawn($: EngineInterface, agent: string, spawn: EagerSpawn) {
@@ -557,9 +575,11 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
     const denial = isPhaseWorkflow(e) ? await retroPendingDenial($) : undefined
     if (denial !== undefined) return denial
-    const launched = await next(e)
+    if (!isLoopWorkflow(e.name)) return next(e)
+    const eager = await writeEagerFiles($)
+    if ('deny' in eager) return { deny: eager.deny }
+    const launched = await next({ ...e, args: withEagerDir(e.args, eager.dir) })
     if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result as { taskId?: string } | undefined)?.taskId)
-    if (!isLoopWorkflow(e.name)) return launched
     return filedResult($, 'Workflow', e.tool_use_id, launched)
   })
 

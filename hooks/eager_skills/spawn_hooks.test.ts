@@ -30,6 +30,7 @@ const worldBeneath = (on: On, files: Record<string, string>, dirs: Record<string
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.cwd', () => ({ value: '/project' }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: '/project\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined || e.path in dirs }))
   on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
   on('fs.list', (_, e) => ({

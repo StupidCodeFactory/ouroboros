@@ -40,4 +40,15 @@ export const eagerSkillNames = (config: OuroborosConfig, agent: string, lane: st
   return dedupeByName([...agentSkills, ...(laneConfig?.eager_skills ?? [])].map(toSkillRef))
 }
 
+export type Seat = { role: string; lane: string | undefined }
+
+const WORKFLOW_ROLES = ['architect', 'auditor', 'reviewer', 'implementer']
+
+export const workflowSeats = (config: OuroborosConfig): Seat[] => [
+  ...WORKFLOW_ROLES.map(role => ({ role, lane: undefined })),
+  ...Object.keys(config.agents?.implementer?.lanes ?? {}).map(lane => ({ role: 'implementer', lane })),
+]
+
+export const eagerFileName = ({ role, lane }: Seat) => (lane === undefined ? `${role}.md` : `${role}-${lane}.md`)
+
 export const laneOf = (prompt: string) => LANE_PROMPT.exec(prompt)?.[1]

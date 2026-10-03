@@ -38,23 +38,29 @@ const CHECKS_SCHEMA = {
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
+const eagerPreamble = file =>
+  args.eager_dir ? `Before anything else, read ${args.eager_dir}/${file} in full and follow the skills it holds.\n` : ''
+
 const draftReference = relative => `\`<drafts_dir from .claude/ouroboros.json>/${relative}\` in the main checkout`
 
 const goalLine = () => (args.goal ? `Goal: ${args.goal}.\n` : '')
 
 const briefPrompt = () =>
+  eagerPreamble('architect.md') +
   `Milestone ${args.milestone} kickoff. ${goalLine()}` +
   `Read the spec ${draftReference(args.spec)} and the plan ${draftReference(args.plan)}. ` +
   'Write the design brief for this milestone: constraints, seams, what must not change. ' +
   'List every architectural decision the milestone commits to as `decisions`, each with its rationale.'
 
 const planPrompt = brief =>
+  eagerPreamble('architect.md') +
   `Milestone ${args.milestone}. Append \`## Part C: ${args.milestone} tasks\` to the plan ${draftReference(args.plan)} ` +
   'in the same format as its Part B: every task heading `### Task <id>: <title> (PN)` ends with its phase tag, every step is a `- [ ]` box. ' +
   `Keep the existing parts untouched. Architect brief:\n${brief}\n` +
   'Return the phases you tagged in order and how many tasks you added.'
 
 const checksPrompt = brief =>
+  eagerPreamble('auditor.md') +
   `Milestone ${args.milestone}. From the spec ${draftReference(args.spec)} and this brief:\n${brief}\n` +
   'Write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
   'Return the check names and whether they are all red.'
