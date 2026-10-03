@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
-  description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), checkpoint, then open the phase PR for the user to merge',
-  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
+  description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), merge in the default branch, checkpoint, then open the phase PR for the user to merge',
+  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Review' }, { title: 'Sync' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -76,6 +76,12 @@ const PR_SCHEMA = {
   type: 'object',
   properties: { pr_url: { type: 'string' } },
   required: ['pr_url'],
+}
+
+const SYNC_SCHEMA = {
+  type: 'object',
+  properties: { synced: { type: 'boolean' }, conflicted_files: { type: 'array', items: { type: 'string' } } },
+  required: ['synced', 'conflicted_files'],
 }
 
 const BRANCH_SCHEMA = {
@@ -439,6 +445,24 @@ const startFreshBranch = () =>
 
 const opensPullRequest = () => args.merge_policy !== 'architect'
 
+const syncPrompt = () =>
+  `${args.milestone} ${args.phase} is reviewed. Run \`git fetch origin\` and merge the default branch's origin tip into the current branch with \`git merge --no-edit\`. ` +
+  'When it conflicts, run `git merge --abort`, never resolve it by hand, and return `synced` false with the `conflicted_files`. Otherwise return `synced` true and no files.'
+
+const syncDefaultBranch = () =>
+  agent(syncPrompt(), {
+    agentType: ouroborosAgent('implementer'),
+    schema: SYNC_SCHEMA,
+    phase: 'Sync',
+    model: 'haiku',
+    effort: 'low',
+  })
+
+const syncGap = synced => {
+  if (!synced) return 'default branch sync returned nothing'
+  return synced.synced ? undefined : `the default branch conflicts with ${args.phase} in ${synced.conflicted_files.join(', ') || 'unnamed files'}`
+}
+
 if (args.fresh_branch) {
   phase('Branch')
   const branched = await startFreshBranch()
@@ -457,6 +481,12 @@ const reviewed = entries.filter(entry => entry.changed)
 const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
+
+if (opensPullRequest()) {
+  phase('Sync')
+  const gap = syncGap(await syncDefaultBranch())
+  if (gap) return { status: 'escalate', ...summary, evidence: '', failing_gate: gap }
+}
 
 phase('Checkpoint')
 const checkpointed = await checkpoint()
