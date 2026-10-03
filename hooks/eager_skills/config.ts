@@ -5,6 +5,7 @@ type AgentConfig = LaneConfig & { lanes?: Record<string, LaneConfig> }
 export type OuroborosConfig = {
   agents?: Record<string, AgentConfig>
   eager_skills_max_chars?: number
+  drafts_dir?: string
 }
 
 export const DEFAULT_EAGER_SKILLS_MAX_CHARS = 60000

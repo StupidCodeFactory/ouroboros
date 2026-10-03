@@ -9,12 +9,13 @@ The plan file is the single source of truth for what is done. Conversation memor
 ## Writing a plan
 
 - Every task and every step is a checkbox: `- [ ]`. A task heading carries its steps as nested boxes.
+- A task heading is `### Task <id>: <title> (PN)`; the trailing `(PN)` is the phase the task belongs to. A plan whose headings carry no phase tag is a single phase.
 - Each step names its verification (the command to run and the expected result), so ticking it has a clear bar.
 - Each phase ends with a box for its checkpoint commit.
 
 ## Before starting work
 
-1. Read the plan file named in your prompt (or under `drafts_dir` from `.claude/ouroboros.json`).
+1. Read the plan file named in your prompt (or under `drafts_dir` from `.claude/ouroboros.json`). Drafts live in the main checkout's `drafts_dir`, the directory above `git rev-parse --path-format=absolute --git-common-dir`; never read or edit a worktree's copy.
 2. Find the first unchecked box in your phase. That is where you are, whatever you remember.
 3. Mirror that task's unchecked steps into the session task list so they stay visible while you work. The plan file still wins on any disagreement.
 

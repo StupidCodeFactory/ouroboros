@@ -11,3 +11,4 @@ description: Load at the start of every brainstorming or planning session; rules
 4. Ask questions grouped together, each with a recommended default, and let the user answer by exception.
 5. Put the agent workflow, the success rules and the milestones in the first draft of a spec; never add them afterwards.
 6. Check standing user rules (merge approval, uncommitted docs, no destructive tasks) against every new process decision as soon as it appears.
+8. End every task heading with its phase tag, `### Task <id>: <title> (PN)`; the loop derives each phase's task list from those tags and treats an untagged plan as one phase.

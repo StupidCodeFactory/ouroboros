@@ -11,6 +11,8 @@ A Claude Code plugin that runs a disciplined, self-improving development loop. E
 
 Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
 
+Specs and plans are ordinary superpowers drafts: `### Task <id>: <title> (PN)` headings and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
+
 Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
 
 ## Install

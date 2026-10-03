@@ -1,6 +1,7 @@
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
+import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf } from './drafts'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
@@ -219,6 +220,19 @@ async function skillIndex($: EngineInterface): Promise<SkillIndex> {
 async function readConfig($: EngineInterface): Promise<OuroborosConfig> {
   if (!(await $.fs.exists(CONFIG_PATH))) return {}
   return JSON.parse(await $.fs.read(CONFIG_PATH))
+}
+
+export async function mainCheckoutRoot($: EngineInterface) {
+  const { stdout } = await $.process.run(GIT_COMMON_DIR)
+  return checkoutRootOf(stdout)
+}
+
+export async function draftsPath($: EngineInterface, relative: string) {
+  return draftsPathOf(await mainCheckoutRoot($), (await readConfig($)).drafts_dir, relative)
+}
+
+export async function activeDrafts($: EngineInterface) {
+  return activeDraftsOf((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
 }
 
 const agentDefinitionPath = ($: EngineInterface, agent: string) => `${$.plugin.root}/agents/${agent}.md`
