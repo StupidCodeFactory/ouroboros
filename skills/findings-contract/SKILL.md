@@ -4,7 +4,7 @@ description: Load when reviewing or auditing; the fenced findings JSON block eve
 ---
 # Findings contract
 
-End every review or audit with one fenced JSON block tagged `findings`:
+When your caller gives you a result schema with `findings`, return them there and print no fenced block. Otherwise end every review or audit with one fenced JSON block tagged `findings`:
 
 ```findings
 {"findings": [{"file": "src/orders/sync.rb", "line": 12, "summary": "…", "root_cause": "code-bug|skill-gap|skill-misread|skill-misuse|agent-behaviour", "skill": "<skill-name>", "agent": "implementer:<lane>"}]}

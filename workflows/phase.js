@@ -1,6 +1,6 @@
 export const meta = {
   name: 'phase',
-  description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff in parallel, fix by task for up to three rounds, checkpoint, then open the phase PR for the user to merge',
+  description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), checkpoint, then open the phase PR for the user to merge',
   phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
@@ -84,11 +84,10 @@ const BRANCH_SCHEMA = {
   required: ['branch', 'base'],
 }
 
-const MAX_FIX_ROUNDS = 3
+const MAX_REVIEW_ROUNDS = 3
 const REVIEWERS = [
   { agent: 'reviewer', stage: 'review' },
   { agent: 'architect', stage: 'architect_review' },
-  { agent: 'auditor', stage: 'audit' },
 ]
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
@@ -280,7 +279,8 @@ const taskLine = entry => `- task ${entry.task.id} (${entry.task.title}): commit
 
 const REVIEW_RULES =
   'Name the task each finding belongs to in `task`. A finding blocks only when its file and line fall inside that task\'s diff; ' +
-  'anything about code outside it is recorded as a follow-up in the plan and never blocks. Return every finding with its root cause; mark blocking ones.'
+  'anything about code outside it is recorded as a follow-up in the plan and never blocks. Return every finding with its root cause; mark blocking ones. ' +
+  'Return findings only in the structured result; print no fenced findings block.'
 
 const reviewPrompt = (reviewer, entries) =>
   eagerPreamble(`${reviewer}.md`) +
@@ -288,10 +288,8 @@ const reviewPrompt = (reviewer, entries) =>
   `Review the whole ${args.phase} diff on the current branch as the ${reviewer}. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
 
 const recheckPrompt = (reviewer, entries, blocking) =>
-  eagerPreamble(`${reviewer}.md`) +
-  commonBrief() +
   `As the ${reviewer}, re-check these blocking findings on the ${args.phase} diff after the fixes:\n${JSON.stringify(blocking)}\n` +
-  `Report each one still open and anything the fixes broke; do not review the rest again. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
+  `Read only these findings and the fix commits; do not re-read the brief, the plan or your skills. Report each one still open and anything the fixes broke; do not review the rest again. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
 
 const roundPrompt = (reviewer, round, entries, blocking) => (round === 1 ? reviewPrompt(reviewer, entries) : recheckPrompt(reviewer, entries, blocking))
 
@@ -335,16 +333,16 @@ const reviewPhase = async entries => {
   const followUps = []
   let blocking = []
   let fixHunks = []
-  for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
+  for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     if (round > 1) fixHunks = await fixRound(entries, blocking, round)
-    const raised = await reviewRound(reviewersForRound(round, MAX_FIX_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
+    const raised = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
     findings.push(...raised)
     const triaged = triagePhaseFindings(raised, diffsOf(entries))
     followUps.push(...triaged.followUps)
     blocking = triaged.blocking
     if (!blocking.length) return { blocking, findings, followUps, rounds: round }
   }
-  return { blocking, findings, followUps, rounds: MAX_FIX_ROUNDS }
+  return { blocking, findings, followUps, rounds: MAX_REVIEW_ROUNDS }
 }
 
 const NOT_REVIEWED = { blocking: [], findings: [], followUps: [], rounds: 0 }
