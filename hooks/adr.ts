@@ -20,7 +20,7 @@ export const isDraftPath = (draftsDir: string | undefined, path: string) => {
   return new RegExp(`(^|/)${escapeRegExp(draftsDir)}/(specs|plans)/`).test(path)
 }
 
-export const adrScribePrompt = (instruction: string, decisions: Decision[]) =>
+export const adrScribePrompt = (instruction: string, decisions: readonly object[]) =>
   `${instruction}\n\n\`\`\`json\n${JSON.stringify({ decisions })}\n\`\`\``
 
 export const planDriftRow = (dateIso: string, phase: string, draftPath: string) =>

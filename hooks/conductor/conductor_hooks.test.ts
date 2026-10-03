@@ -216,6 +216,27 @@ test('the real kickoff notification reads the full result from its output file a
   expect(disk.get('.claude/ouroboros/results/wpsy5r9zt.json')).toContain('"red":true')
 })
 
+test('the kickoff decisions open Proposed ADRs through the scribe, since no architect Agent call carries them', async ($, on) => {
+  worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': kickoffInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [KICKOFF_OUTPUT_FILE]: KICKOFF_OUTPUT,
+  })
+  const spawned: Array<{ subagent_type?: string; prompt?: string }> = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e as { subagent_type?: string; prompt?: string })
+    return { model: 'fable', agentId: 'scribe-1' }
+  })
+
+  await $.session.receive({ origin: NOTIFICATION, text: KICKOFF_NOTIFICATION })
+
+  expect(spawned).toHaveLength(1)
+  expect(spawned[0]).toMatchObject({ subagent_type: 'ouroboros:adr-scribe' })
+  expect(spawned[0]?.prompt).toContain('open Proposed ADRs')
+  expect(spawned[0]?.prompt).toContain('one-import-queue')
+})
+
 test('a missing workflow leaves the launch pending and nothing throws', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })

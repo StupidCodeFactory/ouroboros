@@ -53,6 +53,11 @@ const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
   return { type: 'exit-result', merged: false, failing_gate: typeof json?.failing_gate === 'string' ? json.failing_gate : 'result unreadable' }
 }
 
+export const kickoffDecisionsOf = (run: Run, json: Record<string, unknown> | undefined): object[] => {
+  if (bareName(run.workflow) !== 'milestone-kickoff' || !Array.isArray(json?.decisions)) return []
+  return json.decisions
+}
+
 export const loopEventOf = (text: string, resultPath: string, run: Run, currentPhase: string | null, json = embeddedJson(text)): LoopEvent => {
   const workflow = bareName(run.workflow)
   if (workflow === 'milestone-kickoff') return { type: 'kickoff-done', brief: typeof json?.brief === 'string' ? json.brief : '' }

@@ -4,7 +4,7 @@ import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribe
 import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { digestedResult, isOversized } from './conductor/digest'
-import { bareName, isLoopNotification, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
+import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, workflowCall } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
@@ -277,8 +277,9 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const resultPath = `${RESULTS_DIR}/${run.id}.json`
   const outputText = await workflowOutputText($, text)
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
-  const fullResult = outputText === undefined ? undefined : workflowResultOf(outputText)
-  const event = loopEventOf(text, resultPath, run, state.current, fullResult)
+  const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
+  await openKickoffAdrs($, kickoffDecisionsOf(run, json))
+  const event = loopEventOf(text, resultPath, run, state.current, json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
 }
 
@@ -300,6 +301,11 @@ async function filedResult<T extends { result?: unknown }>($: EngineInterface, t
 
 async function askAdrScribe($: EngineInterface, prompt: string) {
   await $.agent.spawn({ subagentType: `${$.plugin.name}:adr-scribe`, description: 'adr', prompt })
+}
+
+async function openKickoffAdrs($: EngineInterface, decisions: readonly object[]) {
+  if (decisions.length === 0) return
+  await askAdrScribe($, adrScribePrompt(OPEN_PROPOSED_ADRS, decisions))
 }
 
 async function openProposedAdrs($: EngineInterface, architectText: string) {
