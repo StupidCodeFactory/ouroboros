@@ -1,7 +1,7 @@
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions } from './adr'
-import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, assertUniqueTaskIds, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
+import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, assertUniqueTaskIds, checkoutRootOf, draftsPathOf, firstUncheckedBox, phaseTasks } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
@@ -433,9 +433,29 @@ async function isPrematureCheckpoint($: EngineInterface, command: string) {
 
 const resultPhase = (json: Record<string, unknown> | undefined, state: LoopState) => (typeof json?.phase === 'string' ? json.phase : (state.current ?? ''))
 
-async function withVerifiedCheckpoint($: EngineInterface, event: LoopEvent) {
+async function headCommit($: EngineInterface) {
+  const { stdout } = await $.process.run(['git', 'log', '-1', '--format=%H%n%s'])
+  const [sha = '', subject = ''] = stdout.split('\n')
+  return { sha, subject }
+}
+
+const ranTaskIds = (json: Record<string, unknown> | undefined) =>
+  Array.isArray(json?.tasks) ? (json.tasks as Array<{ id?: unknown }>).flatMap(task => (typeof task.id === 'string' ? [task.id] : [])) : []
+
+async function openTasksOf($: EngineInterface, phase: string, json: Record<string, unknown> | undefined) {
+  const planText = await activePlanText($)
+  if (planText === undefined) return []
+  const ran = ranTaskIds(json)
+  return phaseTasks(planText, phase).filter(task => ran.includes(task.id) && task.unchecked > 0).map(task => task.id)
+}
+
+async function withVerifiedCheckpoint($: EngineInterface, event: LoopEvent, json: Record<string, unknown> | undefined) {
   if (event.type !== 'phase-result' || event.status !== 'checkpointed') return event
-  return verifiedCheckpoint(event, await hasPhaseCommit($, event.phase))
+  return verifiedCheckpoint(event, {
+    head: await headCommit($),
+    phaseCommitFound: await hasPhaseCommit($, event.phase),
+    openTasks: await openTasksOf($, event.phase, json),
+  })
 }
 
 async function appendToPlan($: EngineInterface, section: string) {
@@ -460,7 +480,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
   await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
-  const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)))
+  const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)), json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
 

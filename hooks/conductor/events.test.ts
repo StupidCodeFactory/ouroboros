@@ -30,15 +30,40 @@ test('kickoff, retro and exit results map to their events', () => {
   expect(loopEventOf('{"merged":true}', 'e.json', { id: 'e', workflow: 'milestone-exit' }, 'P1')).toEqual({ type: 'exit-result', merged: true })
 })
 
+const HEAD_IS_P1 = { head: { sha: '28284a7a1c', subject: 'phase(P1): event contract' }, phaseCommitFound: true, openTasks: [] }
+
 test('a phase reported checkpointed without its phase commit on the branch escalates', () => {
   const reported = { type: 'phase-result' as const, status: 'checkpointed' as const, phase: 'P1', result_path: 'r1.json' }
-  expect(verifiedCheckpoint(reported, false)).toEqual({
+  expect(verifiedCheckpoint(reported, { ...HEAD_IS_P1, phaseCommitFound: false })).toEqual({
     ...reported,
     status: 'escalate',
     failing_gate: 'the workflow reported checkpointed but no phase(P1) commit is on the branch',
   })
-  expect(verifiedCheckpoint(reported, true)).toEqual(reported)
-  expect(verifiedCheckpoint({ type: 'retro-done' }, false)).toEqual({ type: 'retro-done' })
+  expect(verifiedCheckpoint(reported, HEAD_IS_P1)).toEqual(reported)
+  expect(verifiedCheckpoint({ type: 'retro-done' }, HEAD_IS_P1)).toEqual({ type: 'retro-done' })
+})
+
+test('a reported checkpoint sha must be HEAD with a phase subject, an older phase commit does not count', () => {
+  const reported = { type: 'phase-result' as const, status: 'checkpointed' as const, phase: 'P1', result_path: 'r1.json', checkpoint_sha: '28284a7a' }
+  expect(verifiedCheckpoint(reported, HEAD_IS_P1)).toEqual(reported)
+  expect(verifiedCheckpoint(reported, { ...HEAD_IS_P1, head: { sha: '9f00aa11', subject: 'fix: remove duplicate golden test' } })).toMatchObject({
+    status: 'escalate',
+    failing_gate: 'the workflow reported checkpoint 28284a7a but HEAD is 9f00aa11 "fix: remove duplicate golden test"',
+  })
+  expect(verifiedCheckpoint(reported, { ...HEAD_IS_P1, head: { sha: '28284a7a1c', subject: 'feat: tick P1 boxes' } })).toMatchObject({ status: 'escalate' })
+})
+
+test('a checkpoint with open boxes in a task the phase ran escalates', () => {
+  const reported = { type: 'phase-result' as const, status: 'checkpointed' as const, phase: 'P1', result_path: 'r1.json' }
+  expect(verifiedCheckpoint(reported, { ...HEAD_IS_P1, openTasks: ['5', '7'] })).toMatchObject({
+    status: 'escalate',
+    failing_gate: 'the workflow reported checkpointed with open plan boxes in tasks 5, 7',
+  })
+})
+
+test('the checkpoint sha travels with the phase result', () => {
+  const json = { status: 'checkpointed', phase: 'P0', checkpoint_sha: 'abc123', tasks: [] }
+  expect(loopEventOf('', 'r.json', { id: 'w1', workflow: 'phase' }, 'P0', json)).toMatchObject({ checkpoint_sha: 'abc123' })
 })
 
 test('an unmerged phase PR travels with the phase result', () => {

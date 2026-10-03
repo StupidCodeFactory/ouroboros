@@ -459,12 +459,14 @@ const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entr
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
 phase('Checkpoint')
-const verdict = checkpointVerdict(await checkpoint())
+const checkpointed = await checkpoint()
+const verdict = checkpointVerdict(checkpointed)
+const checkpointSha = checkpointed ? checkpointed.sha : ''
 if (verdict.status !== 'checkpointed') return { status: verdict.status, ...summary, evidence: verdict.evidence }
 
-if (!opensPullRequest()) return { status: 'checkpointed', ...summary, evidence: verdict.evidence }
+if (!opensPullRequest()) return { status: 'checkpointed', ...summary, evidence: verdict.evidence, checkpoint_sha: checkpointSha }
 
 phase('Pull request')
 const opened = await openPullRequest(summary, verdict.evidence)
 if (!opened) return { status: 'escalate', ...summary, evidence: verdict.evidence, failing_gate: 'phase PR not opened' }
-return { status: 'checkpointed', ...summary, evidence: verdict.evidence, pr_url: opened.pr_url, merged: false }
+return { status: 'checkpointed', ...summary, evidence: verdict.evidence, checkpoint_sha: checkpointSha, pr_url: opened.pr_url, merged: false }

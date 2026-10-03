@@ -47,6 +47,7 @@ const phaseEvent = (json: Record<string, unknown> | undefined, phase: string | n
   result_path: resultPath,
   ...(typeof json?.failing_gate === 'string' && json.failing_gate !== '' ? { failing_gate: json.failing_gate } : {}),
   ...(typeof json?.pr_url === 'string' && json.pr_url !== '' && json.merged !== true ? { pr_url: json.pr_url } : {}),
+  ...(typeof json?.checkpoint_sha === 'string' && json.checkpoint_sha !== '' ? { checkpoint_sha: json.checkpoint_sha } : {}),
 })
 
 const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
@@ -73,7 +74,23 @@ export const loopEventOf = (text: string, resultPath: string, run: Run, currentP
   return phaseEvent(json, currentPhase, resultPath)
 }
 
-export const verifiedCheckpoint = (event: LoopEvent, phaseCommitted: boolean): LoopEvent => {
-  if (event.type !== 'phase-result' || event.status !== 'checkpointed' || phaseCommitted) return event
-  return { ...event, status: 'escalate', failing_gate: `the workflow reported checkpointed but no phase(${event.phase}) commit is on the branch` }
+export type CheckpointProof = { head: { sha: string; subject: string }; phaseCommitFound: boolean; openTasks: string[] }
+
+type PhaseResult = Extract<LoopEvent, { type: 'phase-result' }>
+
+const isSameCommit = (left: string, right: string) => left !== '' && right !== '' && (left.startsWith(right) || right.startsWith(left))
+
+const commitGap = (event: PhaseResult, proof: CheckpointProof) => {
+  if (event.checkpoint_sha === undefined) return proof.phaseCommitFound ? undefined : `the workflow reported checkpointed but no phase(${event.phase}) commit is on the branch`
+  if (isSameCommit(event.checkpoint_sha, proof.head.sha) && proof.head.subject.startsWith(`phase(${event.phase}):`)) return undefined
+  return `the workflow reported checkpoint ${event.checkpoint_sha} but HEAD is ${proof.head.sha.slice(0, 8)} "${proof.head.subject}"`
+}
+
+const boxGap = (proof: CheckpointProof) =>
+  proof.openTasks.length === 0 ? undefined : `the workflow reported checkpointed with open plan boxes in tasks ${proof.openTasks.join(', ')}`
+
+export const verifiedCheckpoint = (event: LoopEvent, proof: CheckpointProof): LoopEvent => {
+  if (event.type !== 'phase-result' || event.status !== 'checkpointed') return event
+  const gap = commitGap(event, proof) ?? boxGap(proof)
+  return gap === undefined ? event : { ...event, status: 'escalate', failing_gate: gap }
 }

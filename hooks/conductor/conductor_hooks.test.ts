@@ -241,7 +241,7 @@ test('a sliced kickoff brief is filed per task and the phase gets the directory 
   const disk = worldBeneath(on, {
     '.claude/ouroboros.json': CONFIG,
     '.claude/ouroboros/state.json': kickoffInFlight,
-    '/repo/docs/drafts/plans/m1.md': PLAN,
+    '/repo/docs/drafts/plans/m1.md': PLAN.replace('- [x] done', '- [ ] open'),
     [outputFile]: JSON.stringify({ result: { brief, decisions: [], phases: ['P0', 'P1'], checks: [], red: true } }),
   })
 

@@ -25,15 +25,21 @@ test('a kickoff with a sliced brief passes the brief directory and each task\'s 
   const { state, launch } = nextAction(
     { ...base, current: null, status: 'kickoff' },
     { type: 'kickoff-done', brief: '', slices, brief_dir: '/repo/.claude/ouroboros/briefs/M1' },
-    PLAN,
+    PLAN.replace('- [x] done', '- [ ] open'),
   )
   expect(state).toMatchObject({ brief_dir: '/repo/.claude/ouroboros/briefs/M1', touches: { '1': ['lib/a.rb'] } })
   expect(launch?.args).toEqual({
     milestone: 'M1',
     phase: 'P0',
     brief_dir: '/repo/.claude/ouroboros/briefs/M1',
-    tasks: [{ id: '1', title: 'a', line: 1, unchecked: 0, touches: ['lib/a.rb'] }],
+    tasks: [{ id: '1', title: 'a', line: 1, unchecked: 1, touches: ['lib/a.rb'] }],
   })
+})
+
+test('a task whose boxes are all ticked is never relaunched', () => {
+  const plan = ['### Task 1: done already (P0)', '- [x] a', '### Task 2: still open (P0)', '- [x] a', '- [ ] b'].join('\n')
+  const { launch } = nextAction({ ...base, current: null, status: 'kickoff' }, { type: 'kickoff-done', brief: '' }, plan)
+  expect((launch?.args as { tasks: Array<{ id: string }> }).tasks.map(task => task.id)).toEqual(['2'])
 })
 
 test('a phase whose PR the architect left open escalates with the failing gate', () => {

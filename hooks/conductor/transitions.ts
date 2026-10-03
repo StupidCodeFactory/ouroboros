@@ -8,7 +8,7 @@ import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
   | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string }
-  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string }
+  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string; checkpoint_sha?: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
@@ -35,7 +35,8 @@ const withLane = <T extends PhaseTask & { touches?: string[] }>(task: T, lanes: 
 const phaseArgs = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership) => {
   const base = { milestone: state.milestone, phase, ...briefArg(state) }
   if (planText === undefined) return base
-  return { ...base, tasks: phaseTasks(planText, phase).map(task => withLane(withTouches(task, state.touches, lanes), lanes)) }
+  const open = phaseTasks(planText, phase).filter(task => task.unchecked > 0)
+  return { ...base, tasks: open.map(task => withLane(withTouches(task, state.touches, lanes), lanes)) }
 }
 
 export const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership = {}): Launch => ({
