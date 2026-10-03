@@ -64,7 +64,7 @@ Workflows take everything else through `args`: `milestone-kickoff` gets `{ miles
 
 ## Runtime state
 
-ouroboros writes its runtime state under `.claude/ouroboros/` at the repository root. It is local to each checkout or worktree, so add the directory to the project's `.gitignore`:
+ouroboros writes its runtime state under `.claude/ouroboros/` at the repository root. It is local to each checkout or worktree, and the conductor drops a `.claude/ouroboros/.gitignore` holding `*` so the directory ignores itself; to say so in the project too, add it to the project's `.gitignore`:
 
 ```gitignore
 .claude/ouroboros/

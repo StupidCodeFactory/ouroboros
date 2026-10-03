@@ -532,6 +532,14 @@ test('a merge or rebase in the main session is refused while a workflow writes t
   expect(reached).toEqual(['git status'])
 })
 
+test('the runtime directory ignores itself, so a project never sees its results, state or briefs as untracked', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN })
+
+  await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect(disk.get('.claude/ouroboros/.gitignore')).toBe('*\n')
+})
+
 test('the loop header rides on the prompt context', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))

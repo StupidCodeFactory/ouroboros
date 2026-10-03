@@ -197,7 +197,15 @@ async function readLoopState($: EngineInterface) {
   return parseState((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
 }
 
+const RUNTIME_IGNORE = '.claude/ouroboros/.gitignore'
+
+async function ensureRuntimeIgnored($: EngineInterface) {
+  if (await $.fs.exists(RUNTIME_IGNORE)) return
+  await $.fs.write(RUNTIME_IGNORE, '*\n')
+}
+
 async function writeLoopState($: EngineInterface, state: LoopState) {
+  await ensureRuntimeIgnored($)
   await $.fs.write(STATE_PATH, serializeState(state))
 }
 
