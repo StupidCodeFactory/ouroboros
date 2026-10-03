@@ -1,6 +1,6 @@
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
-import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
+import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions } from './adr'
 import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, assertUniqueTaskIds, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
@@ -19,7 +19,8 @@ import { nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
-import { incidentLogPath, incidentRow } from './incident_log'
+import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
+import type { IncidentPlaces } from './incident_log'
 import { phaseFollowUps } from './phase_review'
 import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneOf, workflowSeats } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
@@ -35,12 +36,12 @@ import { stripFrontmatter } from './skill_text'
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
 const INCIDENT_LOG_HEADER = '# Incidents\n\n'
 const PHASE_CHECKPOINT_SUBJECT = /^phase\(P(\d+)\):/
-const MILESTONE_BRANCH = /^milestone\//
 const RETIRING = { plugin: 'ouroboros', key: 'retiring' } as const
 const PLANNING = { plugin: 'ouroboros', key: 'planning' } as const
 const PLANNING_IDLE = { active: false, ranThisTurn: false }
 const SKILL_INDEX = { plugin: 'ouroboros', key: 'skillIndex' } as const
 const CONFIG_PATH = '.claude/ouroboros.json'
+const PLUGIN_INCIDENTS_DIR = '.claude/ouroboros/plugin-incidents'
 const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
 const RESULTS_DIR = '.claude/ouroboros/results'
 const EAGER_DIR = '.claude/ouroboros/eager'
@@ -114,21 +115,38 @@ async function currentPhase($: EngineInterface) {
   return nextPhaseAfter(await lastCheckpointSubject($))
 }
 
-async function isMilestoneKickedOff($: EngineInterface) {
-  const { stdout: branch } = await $.process.run(['git', 'branch', '--show-current'])
-  if (!MILESTONE_BRANCH.test(branch.trim())) return false
-  return (await lastCheckpointSubject($)).trim() !== ''
-}
-
 async function todayIso($: EngineInterface) {
   return new Date(await $.clock.now()).toISOString().slice(0, 10)
 }
 
 async function countOpenIncidents($: EngineInterface) {
+  const projectRoot = await repositoryRoot($)
   const { stdout } = await $.process.run([
-    'grep', '-rc', '| open |', '.claude/skills', `${$.plugin.root}/skills`, `${$.plugin.root}/agents/incidents`,
+    'grep', '-rh', '| open |', `${projectRoot}/.claude/skills`, `${projectRoot}/${PLUGIN_INCIDENTS_DIR}`, `${$.plugin.root}/skills`, `${$.plugin.root}/agents/incidents`,
   ])
-  return sumGrepCounts(stdout)
+  return openIncidentCount(stdout)
+}
+
+async function isWritableCheckout($: EngineInterface, root: string) {
+  const { exitCode } = await $.process.run(['sh', '-c', 'git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 && test -w "$1"', 'sh', root])
+  return exitCode === 0
+}
+
+async function definedAgents($: EngineInterface) {
+  const agentsDir = `${$.plugin.root}/agents`
+  if (!(await $.fs.exists(agentsDir))) return []
+  return (await $.fs.list(agentsDir)).filter(entry => entry.kind === 'file' && entry.name.endsWith('.md')).map(entry => entry.name.slice(0, -3))
+}
+
+async function incidentPlaces($: EngineInterface): Promise<IncidentPlaces> {
+  return {
+    pluginName: $.plugin.name,
+    pluginRoot: $.plugin.root,
+    projectRoot: await repositoryRoot($),
+    pluginWritable: await isWritableCheckout($, $.plugin.root),
+    pluginSkills: (await subdirectories($, `${$.plugin.root}/skills`)).map(baseName),
+    pluginAgents: await definedAgents($),
+  }
 }
 
 async function countProposedAdrs($: EngineInterface) {
@@ -144,16 +162,17 @@ async function appendIncident($: EngineInterface, path: string, row: string) {
 async function logIncidents($: EngineInterface, reviewText: string) {
   const findings = parseFindings(reviewText).filter(isProcessIncident)
   if (findings.length === 0) return
+  await fileIncidents($, findings, await currentPhase($))
+}
+
+async function fileIncidents($: EngineInterface, findings: Finding[], phase: string) {
+  const places = await incidentPlaces($)
   const dateIso = await todayIso($)
-  const phase = await currentPhase($)
-  for (const finding of findings) {
-    await appendIncident($, incidentLogPath(finding, $.plugin.root), incidentRow(finding, phase, dateIso))
-  }
+  for (const finding of findings) await appendIncident($, incidentLogPath(finding, places), incidentRow(finding, phase, dateIso, places.projectRoot))
 }
 
 async function logUserCorrection($: EngineInterface, skill: string, text: string) {
-  const finding = userCorrection(skill, text)
-  await appendIncident($, incidentLogPath(finding, $.plugin.root), incidentRow(finding, await currentPhase($), await todayIso($)))
+  await fileIncidents($, [userCorrection(skill, text)], await currentPhase($))
 }
 
 async function showStatus($: EngineInterface) {
@@ -429,8 +448,6 @@ async function isDraft($: EngineInterface, path: string) {
 
 async function foldDraftChange($: EngineInterface, draftPath: string) {
   await askAdrScribe($, `${FOLD_DRAFT_CHANGE}: ${draftPath}`)
-  if (!(await isMilestoneKickedOff($))) return
-  await appendIncident($, planningLessonsPath($, 'incidents.md'), planDriftRow(await todayIso($), await currentPhase($), draftPath))
 }
 
 async function planningLessonsText($: EngineInterface) {
@@ -453,7 +470,8 @@ async function settlePlanningAfterTurn($: EngineInterface) {
 
 async function logCandidateLesson($: EngineInterface, promptText: string) {
   if (!(await planningState($)).active) return
-  await appendIncident($, planningLessonsPath($, 'incidents.md'), candidateRow(await todayIso($), await currentPhase($), promptText))
+  const lessons: Finding = { summary: '', root_cause: 'skill-gap', skill: `${$.plugin.name}:planning-lessons` }
+  await appendIncident($, incidentLogPath(lessons, await incidentPlaces($)), candidateRow(await todayIso($), await currentPhase($), promptText))
 }
 
 async function subdirectories($: EngineInterface, path: string) {

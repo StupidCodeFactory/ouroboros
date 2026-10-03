@@ -9,6 +9,12 @@ const FINDINGS_BLOCK = [
 
 const SKILL_LOG = '.claude/skills/example-domain/incidents.md'
 
+const incidentGrepAnswer = (argv: readonly string[]) => {
+  if (argv[0] === 'git') return 'phase(P2): add invoice export'
+  if (argv[1] === '-rc') return 'docs/adr/0001-queue.md:1\n'
+  return '| 2026-10-03 | P0 | auditor | skill-gap | | nothing pins the fail-loudly raise | | open | |\n'
+}
+
 const agentResult = (text: string) => ({
   agentId: 'agent-1',
   content: [{ type: 'text' as const, text }],
@@ -31,7 +37,7 @@ test('a reviewer finding lands as an open incident row in the skill log', async 
   on('process.run', (_, e) => ({
     value: {
       exitCode: 0,
-      stdout: e.argv[0] === 'git' ? 'phase(P2): add invoice export' : '.claude/skills/example-domain/incidents.md:1\n',
+      stdout: incidentGrepAnswer(e.argv),
       stderr: '',
       isStdoutTruncated: false,
       isStderrTruncated: false,

@@ -6,13 +6,13 @@ const VERIFICATION_ONLY = {
   changed: false,
   commits: [],
   hunks: [],
-  evidence: 'Task 2 verified. No code change, no commit (verification only; the plan is uncommitted by rule). bundle exec rspec spec/price_feed/backfill -> 106 examples, 0 failures',
+  evidence: 'Task 2 verified. No code change, no commit (verification only; the plan is uncommitted by rule). bundle exec rspec spec/shop/backfill -> 106 examples, 0 failures',
 }
 
 const CODE_CHANGE = {
   changed: true,
   commits: ['b0510854'],
-  hunks: [{ file: 'lib/price_feed/gap_source_planner.rb', start: 12, end: 31 }],
+  hunks: [{ file: 'lib/shop/gap_source_planner.rb', start: 12, end: 31 }],
   evidence: 'Task 3 done. Commit b0510854 on milestone/m1-foundations.',
 }
 
@@ -37,7 +37,7 @@ const REVIEWERS = [
 
 const SINGLETON_FINDING = {
   reviewer: 'architect',
-  file: 'lib/price_feed/gap_source_planner.rb',
+  file: 'lib/shop/gap_source_planner.rb',
   line: 19,
   summary: 'DashboardGaps still calls Backfill::DashboardClient.instance.gaps.',
   blocking: true,
@@ -50,43 +50,43 @@ test('round one runs every reviewer', () => {
 })
 
 test('a middle round re-runs only the reviewers whose finding blocked, when the fix stays in their files', () => {
-  const fix = [{ file: 'lib/price_feed/gap_source_planner.rb', start: 15, end: 22 }]
+  const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
   expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['architect'])
 })
 
 test('a line three reviewers flagged is re-checked by one of them, not paid for three times', () => {
   const sameLine = ['reviewer', 'architect', 'auditor'].map(reviewer => ({ ...SINGLETON_FINDING, reviewer }))
-  const fix = [{ file: '/repo/lib/price_feed/gap_source_planner.rb', start: 19, end: 19 }]
+  const fix = [{ file: '/repo/lib/shop/gap_source_planner.rb', start: 19, end: 19 }]
   expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, sameLine, fix))).toEqual(['reviewer'])
 })
 
 test('a fix that touches a file outside the previous findings brings every reviewer back', () => {
   const fix = [
-    { file: 'lib/price_feed/gap_source_planner.rb', start: 15, end: 22 },
-    { file: 'lib/price_feed/backfill/dashboard_client.rb', start: 3, end: 9 },
+    { file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 },
+    { file: 'lib/shop/backfill/dashboard_client.rb', start: 3, end: 9 },
   ]
   expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['reviewer', 'architect', 'auditor'])
 })
 
 test('the final round runs every reviewer', () => {
-  const fix = [{ file: 'lib/price_feed/gap_source_planner.rb', start: 15, end: 22 }]
+  const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
   expect(agentsOf(reviewersForRound(3, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['reviewer', 'architect', 'auditor'])
 })
 
 test('blocking findings nobody owns bring every reviewer back rather than none', () => {
   const unowned = [{ ...SINGLETON_FINDING, reviewer: undefined }]
-  const fix = [{ file: 'lib/price_feed/gap_source_planner.rb', start: 15, end: 22 }]
+  const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
   expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, unowned, fix))).toEqual(['reviewer', 'architect', 'auditor'])
 })
 
 const TASK_3_DIFF = [
-  { file: 'lib/price_feed/gap_source_planner.rb', start: 12, end: 31 },
-  { file: 'lib/price_feed/backfill/dashboard_client.rb', start: 1, end: 14 },
+  { file: 'lib/shop/gap_source_planner.rb', start: 12, end: 31 },
+  { file: 'lib/shop/backfill/dashboard_client.rb', start: 1, end: 14 },
 ]
 
 const UNTOUCHED_CALLERS = {
   reviewer: 'reviewer',
-  file: 'lib/price_feed/backfill/runner.rb',
+  file: 'lib/shop/backfill/runner.rb',
   line: 163,
   summary: 'Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes.',
   root_cause: 'code-bug',
@@ -95,7 +95,7 @@ const UNTOUCHED_CALLERS = {
 
 const PHASE_DIFFS = {
   '3': TASK_3_DIFF,
-  '17': [{ file: 'lib/price_feed/month_bucket.rb', start: 1, end: 40 }],
+  '17': [{ file: 'lib/shop/month_bucket.rb', start: 1, end: 40 }],
 }
 
 test('a blocking finding inside its task diff blocks that task', () => {
@@ -104,7 +104,7 @@ test('a blocking finding inside its task diff blocks that task', () => {
 })
 
 test('a blocking finding that names no task is owned by the task whose diff holds its line', () => {
-  const finding = { ...SINGLETON_FINDING, file: 'lib/price_feed/month_bucket.rb', line: 12 }
+  const finding = { ...SINGLETON_FINDING, file: 'lib/shop/month_bucket.rb', line: 12 }
   expect(triagePhaseFindings([finding], PHASE_DIFFS).blocking).toEqual([{ ...finding, task: '17' }])
 })
 
@@ -132,7 +132,7 @@ test('phase follow-ups group by task, unowned ones under the phase', () => {
 test('follow-ups land in the plan as one untagged task of unchecked boxes', () => {
   expect(followUpSection('P0', '3', [UNTOUCHED_CALLERS])).toBe(
     '\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n' +
-      '- [ ] Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes. (lib/price_feed/backfill/runner.rb:163, raised by reviewer)\n',
+      '- [ ] Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes. (lib/shop/backfill/runner.rb:163, raised by reviewer)\n',
   )
 })
 
@@ -161,9 +161,9 @@ test('a checkpoint agent that returned nothing escalates', () => {
 
 const P0_TASKS = [
   { id: '2', title: 'verify the backfill', touches: [] },
-  { id: '3', title: 'DashboardGaps delegates', touches: ['lib/price_feed/gap_source_planner.rb', 'lib/price_feed/backfill/dashboard_client.rb'] },
+  { id: '3', title: 'DashboardGaps delegates', touches: ['lib/shop/gap_source_planner.rb', 'lib/shop/backfill/dashboard_client.rb'] },
   { id: '4', title: 'delete clean_unmonitored', touches: ['lib/tasks/db.rake', 'bin/clean_unmonitored'] },
-  { id: '17', title: 'one month-range helper', touches: ['lib/price_feed/chain_builder.rb', 'lib/price_feed/gap_source_planner.rb', 'lib/price_feed/month_bucket.rb'] },
+  { id: '17', title: 'one month-range helper', touches: ['lib/shop/chain_builder.rb', 'lib/shop/gap_source_planner.rb', 'lib/shop/month_bucket.rb'] },
 ]
 
 const idsOf = (waves: Array<Array<{ id: string }>>) => waves.map(wave => wave.map(task => task.id))

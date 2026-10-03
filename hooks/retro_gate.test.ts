@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const ONE_OPEN_INCIDENT = '.claude/skills/example-domain/incidents.md:1\n'
+const ONE_OPEN_INCIDENT = '| 2026-10-03 | P0 | auditor | skill-gap | | nothing pins the fail-loudly raise | | open | |\n'
 
 const grepAnswers = (on: On, stdout: string) =>
   on('process.run', () => ({

@@ -3,7 +3,8 @@ export type Decision = { title: string; context: string; decision: string; alter
 const DECISIONS_BLOCK = /```json\s*(\{[\s\S]*?"decisions"[\s\S]*?\})\s*```/
 
 export const OPEN_PROPOSED_ADRS = 'open Proposed ADRs'
-export const FOLD_DRAFT_CHANGE = 'fold this draft change into its Proposed ADR'
+export const FOLD_DRAFT_CHANGE =
+  'fold this draft change into its active ADR: note it under Implementation (or Outcome once Accepted); plan drift is never a skill incident'
 export const ACCEPT_MILESTONE_ADRS =
   'fill Outcome and Verification, set Accepted, run the coverage check with the auditor, prune covered drafts'
 
@@ -23,5 +24,3 @@ export const isDraftPath = (draftsDir: string | undefined, path: string) => {
 export const adrScribePrompt = (instruction: string, decisions: readonly object[]) =>
   `${instruction}\n\n\`\`\`json\n${JSON.stringify({ decisions })}\n\`\`\``
 
-export const planDriftRow = (dateIso: string, phase: string, draftPath: string) =>
-  `| ${dateIso} | ${phase} | main | plan-drift | | draft edited after kickoff | ${draftPath} | open | |\n`

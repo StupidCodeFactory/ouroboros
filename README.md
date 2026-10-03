@@ -13,6 +13,8 @@ Project-specific configuration lives in the project's `.claude/ouroboros.json` a
 
 Specs and plans are ordinary markdown drafts: `### Task <id>: <title> (PN)` headings (or `(PN, <lane>)` to pin a task's lane) and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
 
+Incidents land where the curator can fix them: a project skill's in `<project>/.claude/skills/<skill>/incidents.md`; a plugin skill's or agent's in the plugin checkout only when it is a writable git checkout, otherwise in `<project>/.claude/ouroboros/plugin-incidents/<plugin>/{skills,agents}/` for the curator to turn into a patch. Evidence is written relative to the project. Plan drift (a draft edited after kickoff) is not a skill incident: the ADR scribe notes it on the active ADR, and it never counts toward the retro gate.
+
 Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
 
 ## Install
@@ -78,6 +80,6 @@ The committed `.claude/ouroboros.json` is configuration, not runtime state; keep
 
 ## Development
 
-Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh`, `scripts/check_workflow_mirrors.mjs` (the workflow scripts cannot import, so their inline copies of the tested phase logic in `hooks/phase_review.ts` must match it), the plugin tests and `plugin validate`, and refuses the push on any failure.
+Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh` (no outside skill or plugin names, no absolute home paths, and none of the project names listed one per line in the untracked `.git/info/project-names`), `scripts/check_workflow_mirrors.mjs` (the workflow scripts cannot import, so their inline copies of the tested phase logic in `hooks/phase_review.ts` must match it), the plugin tests and `plugin validate`, and refuses the push on any failure.
 
 Status: under construction.

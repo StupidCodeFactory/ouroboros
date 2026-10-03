@@ -72,7 +72,7 @@ test('a reviewer result without decisions spawns no scribe', async ($, on) => {
   expect(spawned).toEqual([])
 })
 
-test('editing a draft after milestone kickoff folds it into its ADR and logs plan drift', async ($, on) => {
+test('editing a draft after milestone kickoff folds it into the active ADR and files no skill incident', async ($, on) => {
   const spawned = spawnsBeneath(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 3) })
   gitBeneath(on, { 'git branch': 'milestone/m1\n', 'git log': 'phase(P1): first' })
@@ -82,11 +82,9 @@ test('editing a draft after milestone kickoff folds it into its ADR and logs pla
   await $.tool.call({ tool: 'Edit', file_path: '/project/docs/drafts/plans/m1.md', old_string: 'a', new_string: 'b' })
 
   expect(spawned).toHaveLength(1)
-  expect(spawned[0]?.prompt).toContain('fold this draft change into its Proposed ADR')
+  expect(spawned[0]?.prompt).toContain('fold this draft change into its active ADR: note it under Implementation')
   expect(spawned[0]?.prompt).toContain('/project/docs/drafts/plans/m1.md')
-  expect(files.get('skills/planning-lessons/incidents.md')).toContain(
-    '| 2026-10-03 | P2 | main | plan-drift | | draft edited after kickoff | /project/docs/drafts/plans/m1.md | open | |',
-  )
+  expect(files.size).toBe(0)
 })
 
 test('editing a draft before kickoff folds it without logging drift', async ($, on) => {
