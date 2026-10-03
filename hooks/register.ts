@@ -29,7 +29,7 @@ import type { InlinedSkill } from './eager_skills/inline'
 import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
-import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
+import { IMPLEMENTER_AGENTS, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger, retroPrompt } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { duplicateLoadWarning, isAnotherInstance } from './double_load'
 import { stripFrontmatter } from './skill_text'
@@ -187,8 +187,23 @@ async function retroPendingDenial($: EngineInterface) {
   return { deny: `retro pending: ${openIncidents} open incidents` }
 }
 
+async function eagerFiles($: EngineInterface) {
+  const dir = await projectPath($, EAGER_DIR)
+  if (!(await $.fs.exists(dir))) return []
+  return (await $.fs.list(dir)).filter(entry => entry.kind === 'file').map(entry => ({ name: entry.name, size: entry.size }))
+}
+
+async function slimmingLimit($: EngineInterface) {
+  return Math.floor(((await readConfig($)).eager_skills_max_chars ?? DEFAULT_EAGER_SKILLS_MAX_CHARS) / 3)
+}
+
+async function curatorPrompt($: EngineInterface) {
+  const files = await eagerFiles($).catch(() => [])
+  return retroPrompt(files, files.length === 0 ? 0 : await slimmingLimit($))
+}
+
 async function startRetro($: EngineInterface): Promise<Run> {
-  const spawned = await $.agent.spawn({ subagentType: `${$.plugin.name}:skill-curator`, description: 'retro', prompt: RETRO_PROMPT })
+  const spawned = await $.agent.spawn({ subagentType: `${$.plugin.name}:skill-curator`, description: 'retro', prompt: await curatorPrompt($) })
   $.ui.toast('retro started')
   return { id: spawned.agentId ?? 'retro', workflow: 'retro' }
 }
