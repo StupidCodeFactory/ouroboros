@@ -4,7 +4,7 @@ import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribe
 import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { digestedResult, isOversized } from './conductor/digest'
-import { isLoopNotification, loopEventOf } from './conductor/events'
+import { bareName, isLoopNotification, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
@@ -185,7 +185,7 @@ async function perform($: EngineInterface, state: LoopState, launch: Launch): Pr
 
 async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, taskId: string | undefined) {
   const state = await readLoopState($)
-  if (state.pending === undefined || state.pending.workflow !== name) return
+  if (state.pending === undefined || state.pending.workflow !== bareName(name ?? '')) return
   await writeLoopState($, { ...state, pending: undefined, run: { id: taskId ?? state.pending.workflow, workflow: state.pending.workflow } })
 }
 
@@ -251,10 +251,18 @@ async function runConductorCommand($: EngineInterface, args: string) {
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'
 }
 
+async function workflowOutputText($: EngineInterface, notificationText: string) {
+  const outputFile = outputFileOf(notificationText)
+  if (outputFile === undefined || !(await $.fs.exists(outputFile))) return undefined
+  return $.fs.read(outputFile)
+}
+
 async function conductLoopResult($: EngineInterface, state: LoopState, run: Run, text: string) {
   const resultPath = `${RESULTS_DIR}/${run.id}.json`
-  await $.fs.write(resultPath, text)
-  const event = loopEventOf(text, resultPath, run, state.current)
+  const outputText = await workflowOutputText($, text)
+  await $.fs.write(resultPath, outputText ?? text)
+  const fullResult = outputText === undefined ? undefined : workflowResultOf(outputText)
+  const event = loopEventOf(text, resultPath, run, state.current, fullResult)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
 }
 

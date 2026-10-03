@@ -2,8 +2,20 @@ import type { Run } from './state'
 import type { LoopEvent } from './transitions'
 
 const PLUGIN_PREFIX = /^[\w-]+:/
+const OUTPUT_FILE = /<output-file>([^<]+)<\/output-file>/
 
-const bareName = (name: string) => name.replace(PLUGIN_PREFIX, '')
+export const bareName = (name: string) => name.replace(PLUGIN_PREFIX, '')
+
+export const outputFileOf = (notificationText: string) => OUTPUT_FILE.exec(notificationText)?.[1]
+
+export const workflowResultOf = (outputFileText: string): Record<string, unknown> | undefined => {
+  try {
+    const { result } = JSON.parse(outputFileText) as { result?: unknown }
+    return result !== null && typeof result === 'object' ? (result as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const namesWorkflow = (text: string, workflow: string) => new RegExp(`(^|[^\\w-])(?:[\\w-]+:)?${workflow}([^\\w-]|$)`).test(text)
 
@@ -41,9 +53,8 @@ const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
   return { type: 'exit-result', merged: false, failing_gate: typeof json?.failing_gate === 'string' ? json.failing_gate : 'result unreadable' }
 }
 
-export const loopEventOf = (text: string, resultPath: string, run: Run, currentPhase: string | null): LoopEvent => {
+export const loopEventOf = (text: string, resultPath: string, run: Run, currentPhase: string | null, json = embeddedJson(text)): LoopEvent => {
   const workflow = bareName(run.workflow)
-  const json = embeddedJson(text)
   if (workflow === 'milestone-kickoff') return { type: 'kickoff-done', brief: typeof json?.brief === 'string' ? json.brief : '' }
   if (workflow === 'retro') return { type: 'retro-done' }
   if (workflow === 'milestone-exit') return exitEvent(json)

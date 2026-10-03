@@ -94,6 +94,76 @@ test('the Workflow call the model makes records the run and clears the pending l
   expect(stateOn(disk).pending).toBeUndefined()
 })
 
+const KICKOFF_OUTPUT_FILE = '/private/tmp/claude-501/-repo/c16ef1c5/tasks/wpsy5r9zt.output'
+
+const KICKOFF_NOTIFICATION = [
+  '<task-notification>',
+  '<task-id>wpsy5r9zt</task-id>',
+  '<tool-use-id>toolu_0177gkCw8AMtXBK4VXKz6xTd</tool-use-id>',
+  `<output-file>${KICKOFF_OUTPUT_FILE}</output-file>`,
+  '<status>completed</status>',
+  '<summary>Dynamic workflow "Milestone kickoff: architect brief and decisions, planner appends the phase-tagged tasks, auditor writes the checks red" completed</summary>',
+  '<result>{"brief":"M1 Foundations design brief (P0, P1). Branch milestone/m1-foundations.\\n\\n- Code comments.\\n- else after return, or nested if/else.\\n- New rubocop offe',
+  `... (truncated 25759 chars, full result in ${KICKOFF_OUTPUT_FILE})</result>`,
+  '<diagnostics>Per-agent results: /repo/subagents/workflows/wf_0b761a2a-26f/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.',
+  'To re-run with edited post-processing: Workflow({scriptPath: \'/repo/workflows/scripts/milestone-kickoff-wf_0b761a2a-26f.js\', resumeFromRunId: \'wf_0b761a2a-26f\', args: {"milestone":"M1","effort":{"brief":"high"}}}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>',
+  '<usage><agent_count>3</agent_count><agents_done>3</agents_done><agents_error>0</agents_error></usage>',
+  '</task-notification>',
+].join('\n')
+
+const KICKOFF_OUTPUT = JSON.stringify({
+  summary: 'Milestone kickoff: architect brief and decisions, planner appends the phase-tagged tasks, auditor writes the checks red',
+  agentCount: 3,
+  logs: [],
+  result: {
+    brief: 'M1 Foundations design brief (P0, P1). Branch milestone/m1-foundations.',
+    decisions: [{ title: 'one-import-queue: one ImportQueue and one ImportDrain fiber pool with unit kinds', rationale: 'one drain' }],
+    phases: ['P0', 'P1'],
+    checks: ['rspec m1: owners API answers an unknown symbol with every month null -- red: 404'],
+    red: true,
+  },
+  totalTokens: 442888,
+  totalToolCalls: 140,
+})
+
+const kickoffInFlight = JSON.stringify({
+  milestone: 'M1', phases: ['P0', 'P1'], current: null, status: 'kickoff', escalations: [], results: {},
+  drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, run: { id: 'wpsy5r9zt', workflow: 'milestone-kickoff' },
+})
+
+test('the plugin-prefixed Workflow call the model makes records the run', async ($, on) => {
+  const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
+  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wpsy5r9zt', workflowName: 'milestone-kickoff' } }))
+
+  await $.tool.call({ tool: 'Workflow', name: 'ouroboros:milestone-kickoff', args: pending.args })
+
+  expect(stateOn(disk)).toMatchObject({ run: { id: 'wpsy5r9zt', workflow: 'milestone-kickoff' } })
+  expect(stateOn(disk).pending).toBeUndefined()
+})
+
+test('the real kickoff notification reads the full result from its output file and queues phase P0', async ($, on) => {
+  const disk = worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': kickoffInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [KICKOFF_OUTPUT_FILE]: KICKOFF_OUTPUT,
+  })
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'scribe-1' }))
+
+  const delivered = await $.session.receive({ origin: NOTIFICATION, text: KICKOFF_NOTIFICATION })
+
+  expect(delivered.text).toContain('Workflow name=phase')
+  expect(stateOn(disk)).toMatchObject({
+    status: 'phase',
+    current: 'P0',
+    brief: 'M1 Foundations design brief (P0, P1). Branch milestone/m1-foundations.',
+    pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P0' } },
+  })
+  expect(stateOn(disk).run).toBeUndefined()
+  expect(disk.get('.claude/ouroboros/results/wpsy5r9zt.json')).toContain('"red":true')
+})
+
 test('a missing workflow leaves the launch pending and nothing throws', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })

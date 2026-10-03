@@ -69,6 +69,15 @@ test('the phase workflow is denied while an incident is open', async ($, on) => 
   expect(reached).toEqual([])
 })
 
+test('the plugin-prefixed phase workflow is gated too', async ($, on) => {
+  grepAnswers(on, ONE_OPEN_INCIDENT)
+  on('tool.call', { tool: 'Workflow' }, () => ({ deny: 'unreachable' }))
+
+  const answered = await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: { phase: 'P2' } })
+
+  expect(answered.text ?? answered.deny).toContain('retro pending')
+})
+
 test('the plugin-prefixed implementer is gated too', async ($, on) => {
   grepAnswers(on, ONE_OPEN_INCIDENT)
   on('tool.call', { tool: 'Agent' }, () => ({ deny: 'unreachable' }))
