@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parseFindings } from './findings'
+import { parseFindings, phaseIncidents } from './findings'
 import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 
 test('reads the fenced findings block', () => {
@@ -65,4 +65,56 @@ test('plan drift rows never count as open skill incidents', () => {
     '| 2026-10-03 | P0 | architect | skill-gap | | verify task names no spec | | fixed | evals/x.md |',
   ].join('\n')
   expect(openIncidentCount(rows)).toBe(1)
+})
+
+const P0_ARCHITECT_PLANNING_GAP = {
+  root_cause: 'skill-gap',
+  skill: 'planning-lessons',
+  agent: 'architect',
+  blocking: false,
+  file: 'lib/shop/backfill/dashboard_client.rb',
+  line: 50,
+  summary: 'Task 2 is verification only and adds no code; a verify task should name the spec that pins its contract.',
+}
+const P0_AUDITOR_INVARIANT_GAP = {
+  root_cause: 'skill-gap',
+  skill: 'pipeline-invariants',
+  agent: null,
+  blocking: false,
+  file: 'lib/shop/backfill/dashboard_client.rb',
+  line: 50,
+  summary: 'The plan says DashboardClient fails loudly on any non-200, but no spec checks the raise.',
+}
+const P0_AUDITOR_STALE_MEMORY = {
+  root_cause: 'agent-behaviour',
+  skill: null,
+  agent: 'auditor',
+  blocking: false,
+  file: '/work/shop/.claude/agent-memory/auditor.md',
+  line: 13,
+  summary: "The auditor memory's 'Open task' line still points at spec files a later commit renamed.",
+}
+const P0_PASSING_NOTE = { root_cause: 'agent-behaviour', skill: null, agent: null, blocking: false, summary: "Task 2 passes. The plan's only step is ticked." }
+const P0_CODE_BUG = { root_cause: 'code-bug', blocking: true, file: 'lib/shop/gap_source_planner.rb', line: 19, summary: 'still .instance' }
+
+const P0_RESULT = {
+  status: 'checkpointed',
+  phase: 'P0',
+  tasks: [
+    { id: '2', status: 'done', findings: [P0_ARCHITECT_PLANNING_GAP, P0_AUDITOR_INVARIANT_GAP, P0_AUDITOR_STALE_MEMORY, P0_PASSING_NOTE] },
+    { id: '3', status: 'done', findings: [P0_CODE_BUG, P0_ARCHITECT_PLANNING_GAP] },
+  ],
+}
+
+test('a phase result yields every owned skill or agent finding once, never code bugs or ownerless notes', () => {
+  expect(phaseIncidents(P0_RESULT).map(finding => finding.summary)).toEqual([
+    P0_ARCHITECT_PLANNING_GAP.summary,
+    P0_AUDITOR_INVARIANT_GAP.summary,
+    P0_AUDITOR_STALE_MEMORY.summary,
+  ])
+})
+
+test('a result without tasks yields nothing', () => {
+  expect(phaseIncidents(undefined)).toEqual([])
+  expect(phaseIncidents({ status: 'escalate' })).toEqual([])
 })

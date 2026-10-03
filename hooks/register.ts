@@ -17,7 +17,7 @@ import type { Repair } from './conductor/repair'
 import type { Evidence } from './conductor/reconcile'
 import { nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
-import { isProcessIncident, parseFindings } from './findings'
+import { isProcessIncident, parseFindings, phaseIncidents } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 import type { IncidentPlaces } from './incident_log'
@@ -166,6 +166,7 @@ async function logIncidents($: EngineInterface, reviewText: string) {
 }
 
 async function fileIncidents($: EngineInterface, findings: Finding[], phase: string) {
+  if (findings.length === 0) return
   const places = await incidentPlaces($)
   const dateIso = await todayIso($)
   for (const finding of findings) await appendIncident($, incidentLogPath(finding, places), incidentRow(finding, phase, dateIso, places.projectRoot))
@@ -384,6 +385,8 @@ async function isPrematureCheckpoint($: EngineInterface, command: string) {
   return planText !== undefined && firstUncheckedBox(planText, phase) !== null
 }
 
+const resultPhase = (json: Record<string, unknown> | undefined, state: LoopState) => (typeof json?.phase === 'string' ? json.phase : (state.current ?? ''))
+
 async function appendToPlan($: EngineInterface, section: string) {
   const drafts = await activeDrafts($)
   if (section === '' || drafts === null) return
@@ -405,6 +408,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
+  if (bareName(run.workflow) === 'phase') await fileIncidents($, phaseIncidents(json), resultPhase(json, state))
   const event = await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json))
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
@@ -747,6 +751,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
     if (await isPrematureCheckpoint($, e.command)) return ran
+    if ((await readLoopState($)).run !== undefined) return ran
     if (isPullRequestMerge(e.command) && (await readLoopState($)).status === 'phase') return ran
 
     await startRetro($)

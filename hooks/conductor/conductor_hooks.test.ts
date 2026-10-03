@@ -303,8 +303,40 @@ test('follow-ups a phase raised outside a task diff are appended to the plan as 
   expect(stateOn(disk)).toMatchObject({ status: 'retro' })
 })
 
+test('a finished phase files its skill and agent findings as incidents, then starts the retro', async ($, on) => {
+  const outputFile = '/tmp/tasks/p0.output'
+  const findings = [
+    { root_cause: 'skill-gap', skill: 'pipeline-invariants', agent: null, blocking: false, file: 'lib/shop/backfill/dashboard_client.rb', line: 50, summary: 'no spec checks the fail-loudly raise' },
+    { root_cause: 'agent-behaviour', skill: null, agent: 'auditor', blocking: false, file: '/repo/.git/.claude/agent-memory/auditor.md', line: 13, summary: 'memory points at renamed spec files' },
+    { root_cause: 'code-bug', blocking: true, file: 'lib/shop/gap_source_planner.rb', line: 19, summary: 'still .instance' },
+  ]
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', tasks: [{ id: '2', status: 'done', findings }] } })
+  const disk = worldBeneath(on, {
+    '.claude/ouroboros.json': CONFIG,
+    '.claude/ouroboros/state.json': phaseInFlight,
+    '/repo/docs/drafts/plans/m1.md': PLAN,
+    [outputFile]: output,
+  })
+  mock.clock(on, { now: Date.UTC(2026, 9, 3) })
+  const spawned: Array<{ subagent_type?: string }> = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e as { subagent_type?: string })
+    return { model: 'fable', agentId: 'curator-1' }
+  })
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-notification>\n<task-id>wf-1</task-id>\n<output-file>${outputFile}</output-file>\n<status>completed</status>\n</task-notification>` })
+
+  expect(disk.get('.claude/skills/pipeline-invariants/incidents.md')).toContain('| P0 |  | skill-gap | | no spec checks the fail-loudly raise | lib/shop/backfill/dashboard_client.rb:50 | open | |')
+  const agentLog = [...disk.entries()].find(([path]) => path.endsWith('/auditor.md'))?.[1]
+  expect(agentLog).toContain('| P0 | auditor | agent-behaviour | | memory points at renamed spec files | .claude/agent-memory/auditor.md:13 | open | |')
+  expect([...disk.entries()].some(([path, text]) => path.includes('incidents') && text.includes('still .instance'))).toBe(false)
+  expect(spawned.map(spawn => spawn.subagent_type)).toEqual(['ouroboros:skill-curator'])
+  expect(stateOn(disk)).toMatchObject({ status: 'retro', run: { workflow: 'retro' } })
+})
+
 test('an escalating phase notification reaches the main session as one line', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight })
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
 
   const delivered = await $.session.receive({ origin: NOTIFICATION, text: 'Task wf-1 completed: {"status":"escalate"}' })
 

@@ -48,6 +48,12 @@ test('each phase task carries its lane, so one phase run mixes ruby and python t
   expect((launch?.args as { tasks: Array<{ id: string; lane?: string }> }).tasks.map(task => [task.id, task.lane])).toEqual([['7', 'ruby'], ['19', 'python']])
 })
 
+test('an escalated phase still starts the retro, so its incidents never strand the implementers', () => {
+  const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'escalate', phase: 'P0', result_path: 'r0.json' })
+  expect(state.status).toBe('escalated')
+  expect(launch?.workflow).toBe('retro')
+})
+
 test('a checkpointed phase starts the retro', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('retro')
@@ -75,11 +81,11 @@ test('a finished retro after the last phase launches the exit', () => {
   expect(state.status).toBe('exit')
 })
 
-test('an escalating phase wakes the main session and launches nothing', () => {
+test('an escalating phase wakes the main session and launches only the retro', () => {
   const { state, launch, notify } = nextAction({ ...base }, { type: 'phase-result', status: 'escalate', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('escalated')
   expect(state.escalations[0]).toMatchObject({ kind: 'task-red', phase: 'P0', result_path: 'r0.json' })
-  expect(launch).toBeUndefined()
+  expect(launch).toEqual({ workflow: 'retro', args: {} })
   expect(notify).toContain('r0.json')
 })
 

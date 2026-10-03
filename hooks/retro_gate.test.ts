@@ -74,6 +74,22 @@ test('merging a phase PR starts no second retro and accepts no ADRs', async ($, 
   expect(spawned).toEqual([])
 })
 
+test('a checkpoint commit while the conductor has a run in flight leaves the retro to the conductor', async ($, on) => {
+  const spawned: object[] = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e)
+    return { model: 'fable', agentId: 'curator-1' }
+  })
+  const state = JSON.stringify({ milestone: 'M1', status: 'phase', current: 'P0', run: { id: 'wf-1', workflow: 'phase' } })
+  on('fs.exists', (_, e) => ({ value: e.path.endsWith('.claude/ouroboros/state.json') }))
+  on('fs.read', () => ({ value: state }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P0): delete clean_unmonitored"' })
+
+  expect(spawned).toEqual([])
+})
+
 test('a failed checkpoint commit starts nothing', async ($, on) => {
   const spawned: object[] = []
   on('agent.spawn', (_, e) => {

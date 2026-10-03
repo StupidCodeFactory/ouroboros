@@ -14,6 +14,8 @@ export type LoopEvent =
 
 export type Action = { state: LoopState; launch?: Launch; notify?: string }
 
+const RETRO_LAUNCH: Launch = { workflow: 'retro', args: {} }
+
 const briefArg = (state: LoopState) => {
   if (state.brief_dir !== undefined) return { brief_dir: state.brief_dir }
   if (state.brief_path !== undefined) return { brief_path: state.brief_path }
@@ -78,9 +80,9 @@ const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phas
   const results = { ...state.results, [event.phase]: event.result_path }
   if (event.status === 'escalate') {
     const escalation: Escalation = { kind: 'task-red', phase: event.phase, summary: event.failing_gate ? `${event.phase}: ${event.failing_gate}` : `${event.phase} escalated after its fix rounds`, result_path: event.result_path }
-    return escalated({ ...state, results }, escalation, `${state.milestone} ${event.phase} escalated: see ${event.result_path}`)
+    return { ...escalated({ ...state, results }, escalation, `${state.milestone} ${event.phase} escalated: see ${event.result_path}`), launch: RETRO_LAUNCH }
   }
-  return { state: { ...state, status: 'retro', results }, launch: { workflow: 'retro', args: {} } }
+  return { state: { ...state, status: 'retro', results }, launch: RETRO_LAUNCH }
 }
 
 const onRetroDone = (state: LoopState, planText: string | undefined, lanes: LaneOwnership): Action => {
