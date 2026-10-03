@@ -2,3 +2,6 @@
 
 | date | phase | agent | root_cause | skill says | agent did | evidence | status | eval |
 |---|---|---|---|---|---|---|---|---|
+| 2026-10-03 | P0,P1 | reviewer | skill-gap | findings block lists defects with a root cause | emitted pass reports ("Task 2 passes", "no blocking issues", "checks I ran pass") as findings with root_cause agent-behaviour; each would become an open incident (x13) | lib/app/backfill/dashboard_client.rb:50; lib/tasks/db.rake:4 | open | |
+| 2026-10-03 | P0,P1 | reviewer | skill-gap | agent field names the agent at fault | used three spellings for one lane agent (`implementer-ruby`, `implementer:ruby`, `implementer`) and five for the curator/architect (`curator`, `skill-curator`, `architect-m1`); 5 findings carry neither skill nor agent and are dropped by asIncident (x10+) | .claude/skills/ruby-code-conventions/incidents.md:5 | open | |
+| 2026-10-03 | P1 | auditor | skill-misread | the result ends with a fenced ```json findings block | checkpoint evidence used a ```findings fence; FINDINGS_BLOCK in hooks/findings.ts only matches ```json, so its 3 findings are invisible to logIncidents (x1) | wr4z11mqu result.evidence | open | |

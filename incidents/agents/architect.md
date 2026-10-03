@@ -1,0 +1,17 @@
+# Incidents
+
+| date | phase | agent | root_cause | skill says | agent did | evidence | status | eval |
+|---|---|---|---|---|---|---|---|---|
+| 2026-10-03 | P0 | planner | agent-behaviour | the checkpoint closes the phase | placed the P0 `phase(P0)` checkpoint step in Task 4 although Task 17 (P0) came later; 9297a54e carries phase(P0) one commit early (x7) | docs plan line 393; lib/tasks/db.rake:57 | open | |
+| 2026-10-03 | P0 | planner | agent-behaviour | plan text tracks the shipped change | Task 4 Files list and Steps 2/4/5 still name spec/guards/dangerous_tasks_spec.rb after Step 1 moved the guard (x5) | docs plan line 345 | open | |
+| 2026-10-03 | P0,P1 | planner | skill-gap | (writing-plans) refactor steps expect "PASS with no spec edits" | labelled a behaviour change (GapSourcePlanner future-month scan) a refactor and asked for no regression spec; prescribed a new now_ms beside App.now_ms without searching (x4) | docs plan line 1926; lib/app/gap_source_planner.rb:85 | open | |
+| 2026-10-03 | P1 | planner | agent-behaviour | one behaviour, one test | required a unit spec that copies the acceptance golden spec byte for byte, and a Python test_events_contract.py beside the existing test_event_goldens.py (x6) | spec/app/events_contract_spec.rb:8; spec/acceptance/event_contract_spec.rb:9 | open | |
+| 2026-10-03 | P1 | planner | agent-behaviour | snippets agree with the acceptance spec | Task 7 snippet `r.params.fetch("months")` returns 500 where the acceptance spec requires 400; Task 18 told the implementer to keep a redundant boot call (x2) | lib/app/web/api.rb:197; lib/app/web/api.rb:8 | open | |
+| 2026-10-03 | P0 | planner | agent-behaviour | a verification step proves its claim | Task 2 verification ran specs that only serve 200s, so the "fails loudly" claim was unproven (x3) | lib/app/backfill/dashboard_client.rb:50 | open | |
+| 2026-10-03 | P1 | planner | agent-behaviour | the done-bar matches the task goal | "Slim the web API" passes on "fewer offenses" while ClassLength 149/140 and two BlockLength offenses remain (x5) | lib/app/web/api.rb:59 | open | |
+| 2026-10-03 | P0 | planner | agent-behaviour | expected output is checked | Task 17 Step 5 expects an empty grep that prints two legitimate ChainBuilder lines; two headings both titled "Task 18" (x3) | docs plan line 1854; docs plan line 2105 | open | |
+| 2026-10-03 | P0 | architect | agent-behaviour | brief follows house patterns | brief prescribed a single-use DashboardGaps wrapper opening one Sync reactor per month instead of Sync at the rake boundary (x3) | lib/app/gap_source_planner.rb:18 | open | |
+| 2026-10-03 | P0 | architect | agent-behaviour | brief inventories every site | brief listed three hand-rolled month loops and missed MonthGapSeeder's fourth (x3) | lib/app/history_prober/month_gap_seeder.rb:40 | open | |
+| 2026-10-03 | P1 | architect | agent-behaviour | user rules apply on touch | deferred the Configuration class-method proxy to Task 18, so Task 7 grew API ClassLength 151 to 170 (x2) | lib/app/web/api.rb:197 | open | |
+| 2026-10-03 | P1 | architect | agent-behaviour | checkpoint gates on every phase box | 10 P1 boxes neither ticked nor struck at the checkpoint; phase result still reported "checkpointed" while the auditor said BLOCKED (x1) | docs plan line 1792 | open | |
+| 2026-10-03 | P1 | architect | agent-behaviour | evidence is a command you ran | accepted green specs from a commit body without running them (x1) | lib/app/web/asset_search.rb:20 | open | |
