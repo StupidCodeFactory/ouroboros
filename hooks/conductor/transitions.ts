@@ -1,4 +1,4 @@
-import { firstUncheckedBox, phaseTasks } from '../drafts'
+import { firstUncheckedBox, phaseTasks, untaggedOpenTasks } from '../drafts'
 import type { PhaseTask } from '../drafts'
 import { touchesByTask } from './briefs'
 import type { BriefSlices } from './briefs'
@@ -76,7 +76,10 @@ const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kick
   }
   const first = state.phases[0]
   if (first === undefined) return { state: { ...state, status: 'idle' }, notify: `${state.milestone}: the plan has no phases` }
-  return launchPhase(withBrief(state, event), first, planText, lanes)
+  const launched = launchPhase(withBrief(state, event), first, planText, lanes)
+  const untagged = planText === undefined ? [] : untaggedOpenTasks(planText)
+  if (untagged.length === 0) return launched
+  return { ...launched, notify: `${state.milestone}: task ${untagged.join(', ')} ${untagged.length === 1 ? 'has' : 'have'} open boxes but no phase tag, so no phase will run ${untagged.length === 1 ? 'it' : 'them'}; tag ${untagged.length === 1 ? 'it' : 'them'} (PN) in the plan` }
 }
 
 const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phase-result' }>): Action => {

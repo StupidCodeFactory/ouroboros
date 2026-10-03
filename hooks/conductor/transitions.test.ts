@@ -154,3 +154,10 @@ test('a kickoff that failed escalates instead of launching a phase on an empty b
   expect(state.status).toBe('escalated')
   expect(notify).toBe('M1 kickoff failed: fresh branch milestone/m1-p0 not created')
 })
+
+test('a kickoff warns about open tasks with no phase tag, since no phase will ever run them', () => {
+  const plan = ['### Task 31: owners API (P0)', '- [ ] a', '### Task 32: M3 acceptance checks', '- [ ] write audit.py', '### Task 4: old work', '- [x] done'].join('\n')
+  const { notify, launch } = nextAction({ ...base, current: null, status: 'kickoff' }, { type: 'kickoff-done', brief: '' }, plan)
+  expect(launch?.workflow).toBe('phase')
+  expect(notify).toBe('M1: task 32 has open boxes but no phase tag, so no phase will run it; tag it (PN) in the plan')
+})

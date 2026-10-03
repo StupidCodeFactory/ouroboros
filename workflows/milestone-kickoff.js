@@ -106,6 +106,7 @@ const planPrompt = brief =>
   eagerPreamble('architect.md') +
   `Milestone ${args.milestone}. Append \`## Part C: ${args.milestone} tasks\` to the plan ${draftReference(args.plan)} ` +
   'in the same format as its Part B: every task heading `### Task <id>: <title> (PN)` ends with its phase tag, every step is a `- [ ]` box. ' +
+  'No task is left untagged, the milestone acceptance-checks task included: tag it with the first phase and give it only check steps; any code a check needs (a script, a helper) is its own tagged task. ' +
   'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. ' +
   `Keep the existing parts untouched. ${TEST_NAMING}Architect brief:\n${brief}\n` +
   'Return the phases you tagged in order, how many tasks you added, and for each added task its brief slice in `tasks`: ' +

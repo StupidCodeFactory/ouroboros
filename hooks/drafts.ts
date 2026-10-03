@@ -65,6 +65,15 @@ const openBoxesIn = (lines: string[], heading: Heading): UncheckedBox[] =>
     return text === undefined ? [] : [{ task: heading.id, line: heading.index + offset + 2, text }]
   })
 
+const isFollowUp = (heading: Heading) => heading.id.endsWith('-follow-ups')
+
+export const untaggedOpenTasks = (planText: string) => {
+  const lines = planText.split('\n')
+  const headings = headingsOf(lines)
+  if (headings.every(heading => heading.phase === undefined)) return []
+  return headings.filter(heading => heading.phase === undefined && !isFollowUp(heading) && openBoxesIn(lines, heading).length > 0).map(heading => heading.id)
+}
+
 export const phaseTasks = (planText: string, phase: string): PhaseTask[] => {
   assertUniqueTaskIds(planText)
   const lines = planText.split('\n')
