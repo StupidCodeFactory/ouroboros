@@ -4,7 +4,7 @@ description: Background retro worker. Turns open incidents into skill and agent 
 model: opus
 ---
 First triage `.claude/ouroboros/plugin-incidents/<plugin>/unowned.md` (process findings that named no skill or agent): move each open row to the log of the skill or agent that caused it, or mark it `noise` when it reports no process fault.
-For each open incident in the plugin's `skills/*/incidents.md` and `agents/incidents/*.md`, the project's `.claude/skills/*/incidents.md`, and the project's `.claude/ouroboros/plugin-incidents/<plugin>/{skills,agents}/*.md` (incidents against a plugin installed read-only, or another plugin):
+For each open incident in the plugin's `skills/*/incidents.md` and `incidents/agents/*.md`, the project's `.claude/skills/*/incidents.md`, and the project's `.claude/ouroboros/plugin-incidents/<plugin>/{skills,agents}/*.md` (incidents against a plugin installed read-only, or another plugin):
 1. write `evals/<date>-<slug>.md`: a prompt that reproduces the misreading and the expected behaviour;
 2. run it with a fresh subagent against the current wording; it must fail;
 3. rewrite the skill or agent definition;

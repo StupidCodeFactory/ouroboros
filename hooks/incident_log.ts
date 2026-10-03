@@ -39,7 +39,7 @@ const pluginIncidentsDir = (places: IncidentPlaces, plugin: string) => `${places
 
 const ownPluginPath = (places: IncidentPlaces, kind: 'skills' | 'agents', name: string) => {
   if (!places.pluginWritable) return `${pluginIncidentsDir(places, places.pluginName)}/${kind}/${name}.md`
-  return kind === 'skills' ? `${places.pluginRoot}/skills/${name}/incidents.md` : `${places.pluginRoot}/agents/incidents/${name}.md`
+  return kind === 'skills' ? `${places.pluginRoot}/skills/${name}/incidents.md` : `${places.pluginRoot}/incidents/agents/${name}.md`
 }
 
 const skillIncidentPath = (skill: string, places: IncidentPlaces) => {
