@@ -171,9 +171,15 @@ async function activePlanText($: EngineInterface) {
 
 const launchNote = (launch: Launch) => `launch now: Workflow name=${launch.workflow} args=${JSON.stringify(launch.args)} (or later with /ouroboros resume)`
 
+const withEffort = (launch: Launch, effort: OuroborosConfig['effort']): Launch => {
+  if (effort === undefined) return launch
+  return { ...launch, args: { ...launch.args, effort } }
+}
+
 async function perform($: EngineInterface, state: LoopState, launch: Launch): Promise<{ state: LoopState; note?: string }> {
   if (launch.workflow === 'retro') return { state: { ...state, run: await startRetro($), pending: undefined } }
-  return { state: { ...state, pending: launch, run: undefined }, note: launchNote(launch) }
+  const pending = withEffort(launch, (await readConfig($)).effort)
+  return { state: { ...state, pending, run: undefined }, note: launchNote(pending) }
 }
 
 async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, taskId: string | undefined) {

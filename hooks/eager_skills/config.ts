@@ -2,10 +2,13 @@ export type SkillRef = { name: string; level?: string }
 
 type LaneConfig = { eager_skills?: string[] }
 type AgentConfig = LaneConfig & { lanes?: Record<string, LaneConfig> }
+export type Stage = 'brief' | 'implement' | 'review' | 'architect_review' | 'audit' | 'fix' | 'planner' | 'checkpoint' | 'merge'
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type OuroborosConfig = {
   agents?: Record<string, AgentConfig>
   eager_skills_max_chars?: number
   drafts_dir?: string
+  effort?: Partial<Record<Stage, Effort>>
 }
 
 export const DEFAULT_EAGER_SKILLS_MAX_CHARS = 60000

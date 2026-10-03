@@ -43,6 +43,16 @@ test('/ouroboros kickoff stores the drafts and hands the milestone-kickoff launc
   expect(stateOn(disk)).toMatchObject({ milestone: 'M1', phases: ['P0', 'P1'], status: 'kickoff', drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, pending: { workflow: 'milestone-kickoff', args } })
 })
 
+test('/ouroboros kickoff passes the configured per-stage effort map in the launch args', async ($, on) => {
+  const effort = { brief: 'high', checkpoint: 'low' }
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': JSON.stringify({ drafts_dir: 'docs/drafts', effort }), '/repo/docs/drafts/plans/m1.md': PLAN })
+
+  const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect(answered.text).toContain('"effort":{"brief":"high","checkpoint":"low"}')
+  expect(stateOn(disk).pending.args.effort).toEqual(effort)
+})
+
 test('the Workflow call the model makes records the run and clears the pending launch', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })

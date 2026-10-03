@@ -1,4 +1,4 @@
-import { firstUncheckedBox } from '../drafts'
+import { firstUncheckedBox, phaseTasks } from '../drafts'
 import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
@@ -9,7 +9,13 @@ export type LoopEvent =
 
 export type Action = { state: LoopState; launch?: Launch; notify?: string }
 
-const phaseLaunch = (state: LoopState, phase: string): Launch => ({ workflow: 'phase', args: { milestone: state.milestone, phase, brief: state.brief ?? '' } })
+const phaseArgs = (state: LoopState, phase: string, planText: string | undefined) => {
+  const base = { milestone: state.milestone, phase, brief: state.brief ?? '' }
+  if (planText === undefined) return base
+  return { ...base, tasks: phaseTasks(planText, phase) }
+}
+
+const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined): Launch => ({ workflow: 'phase', args: phaseArgs(state, phase, planText) })
 
 const exitLaunch = (state: LoopState): Launch => ({ workflow: 'milestone-exit', args: { milestone: state.milestone } })
 
@@ -25,13 +31,16 @@ const escalated = (state: LoopState, escalation: Escalation, notify: string): Ac
   notify,
 })
 
-const launchPhase = (state: LoopState, phase: string): Action => ({ state: { ...state, status: 'phase', current: phase }, launch: phaseLaunch(state, phase) })
+const launchPhase = (state: LoopState, phase: string, planText: string | undefined): Action => ({
+  state: { ...state, status: 'phase', current: phase },
+  launch: phaseLaunch(state, phase, planText),
+})
 
-const onKickoffDone = (state: LoopState, brief: string): Action => {
+const onKickoffDone = (state: LoopState, brief: string, planText: string | undefined): Action => {
   if (state.status !== 'kickoff') return { state }
   const first = state.phases[0]
   if (first === undefined) return { state: { ...state, status: 'idle' }, notify: `${state.milestone}: the plan has no phases` }
-  return launchPhase({ ...state, brief }, first)
+  return launchPhase({ ...state, brief }, first, planText)
 }
 
 const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phase-result' }>): Action => {
@@ -48,7 +57,7 @@ const onRetroDone = (state: LoopState, planText: string | undefined): Action => 
   if (state.status !== 'retro') return { state }
   const phase = nextPhase(state, planText)
   if (phase === undefined) return { state: { ...state, status: 'exit' }, launch: exitLaunch(state) }
-  return launchPhase(state, phase)
+  return launchPhase(state, phase, planText)
 }
 
 const onExitResult = (state: LoopState, event: Extract<LoopEvent, { type: 'exit-result' }>): Action => {
@@ -60,7 +69,7 @@ const onExitResult = (state: LoopState, event: Extract<LoopEvent, { type: 'exit-
 }
 
 const transition = (state: LoopState, event: LoopEvent, planText: string | undefined): Action => {
-  if (event.type === 'kickoff-done') return onKickoffDone(state, event.brief)
+  if (event.type === 'kickoff-done') return onKickoffDone(state, event.brief, planText)
   if (event.type === 'phase-result') return onPhaseResult(state, event)
   if (event.type === 'retro-done') return onRetroDone(state, planText)
   return onExitResult(state, event)

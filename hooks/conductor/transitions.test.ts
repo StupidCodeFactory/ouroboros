@@ -73,3 +73,8 @@ test('an event for another status changes nothing', () => {
   expect(state).toEqual(base)
   expect(launch).toBeUndefined()
 })
+
+test('a phase launch carries the tasks the plan tags for it', () => {
+  const { launch } = nextAction({ ...base, status: 'retro' }, { type: 'retro-done' }, PLAN)
+  expect(launch?.args).toMatchObject({ phase: 'P1', tasks: [{ id: '2', title: 'b', unchecked: 1 }] })
+})
