@@ -268,13 +268,31 @@ const NOTHING_MERGED = { merged: [], conflicted: [] }
 
 const implementInPlace = async task => entryOf(task, await implement(task, false))
 
+const rebasePrompt = entry =>
+  `${eagerPreamble(implementerFile(entry.task))}${lanePrefix(entry.task)}${taskHeading(entry.task)}.\n${planReference(entry.task)}\n${briefText(entry.task)}\n` +
+  `Your work already exists on branch ${entry.branch} (commits ${entry.commits.join(', ') || 'unknown'}) but its merge conflicted with an earlier task of this wave. ` +
+  'Cherry-pick those commits onto the current branch and resolve each conflict by keeping both tasks\' intent; run this task\'s tests. ' +
+  `Implement from scratch only when the cherry-pick cannot be resolved that way (\`git cherry-pick --abort\` first).${COMMIT_RULE}${RESULT_INSTRUCTION}`
+
+const rebaseInPlace = async entry =>
+  entryOf(
+    entry.task,
+    await agent(rebasePrompt(entry), {
+      agentType: ouroborosAgent('implementer'),
+      schema: IMPLEMENT_SCHEMA,
+      phase: 'Implement',
+      label: `rebase:${entry.task.id}`,
+      effort: stageEffort(args.effort, 'implement'),
+    }),
+  )
+
 const runParallelWave = async wave => {
   const implemented = await parallel(wave.map(task => () => implement(task, true)))
   const isolated = implemented.map((result, position) => entryOf(wave[position], result))
   const branches = isolated.filter(entry => entry.changed && entry.branch)
   const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
   const retried = []
-  for (const entry of tasksToRetry(isolated, merge)) retried.push(await implementInPlace(entry.task))
+  for (const entry of tasksToRetry(isolated, merge)) retried.push(await (entry.branch ? rebaseInPlace(entry) : implementInPlace(entry.task)))
   return isolated.map(entry => retried.find(retry => retry.task.id === entry.task.id) ?? entry)
 }
 
