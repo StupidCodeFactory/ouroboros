@@ -11,7 +11,7 @@ const PLAN = ['### Task 1: a (P0)', '- [x] done', '### Task 2: b (P1)', '- [ ] o
 const run = ($: Parameters<TestBody>[0], args: string) =>
   $.command.run({ command: 'ouroboros', args, origin: COMPOSER, presentation: PRESENTATION })
 
-const worldBeneath = (on: On, files: Record<string, string>) => {
+const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []) => {
   const disk = new Map(Object.entries(files))
   const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
   on('process.run', () => ({ value: { exitCode: 0, stdout: '/repo/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -23,8 +23,14 @@ const worldBeneath = (on: On, files: Record<string, string>) => {
   })
   on('ui.toast', () => ({ value: undefined }))
   on('session.receive', (_, e) => ({ text: e.text }))
+  on('session.id', () => ({ value: 'main-session' }))
+  on('session.send', (_, e) => {
+    sent.push(e.text)
+    return { isDelivered: true as const }
+  })
   return disk
 }
+
 
 const stateOn = (disk: Map<string, string>) => JSON.parse(disk.get('.claude/ouroboros/state.json') ?? '{}')
 
@@ -57,6 +63,8 @@ test('/ouroboros kickoff with only a milestone discovers the plan and its spec u
     disk.set(e.path.slice(e.path.indexOf('.claude/')), e.text)
     return { value: undefined }
   })
+  on('session.id', () => ({ value: 'main-session' }))
+  on('session.send', () => ({ isDelivered: true as const }))
 
   const answered = await run($, 'kickoff M1')
 
@@ -71,6 +79,45 @@ test('/ouroboros kickoff without a project config says how to create one and lau
 
   expect(answered.text).toContain('no .claude/ouroboros.json')
   expect(disk.has('.claude/ouroboros/state.json')).toBe(false)
+})
+
+test('/ouroboros kickoff submits the launch line to the model so nobody has to relay it', async ($, on) => {
+  const submitted: string[] = []
+  worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN }, submitted)
+
+  await run($, 'kickoff M1 specs/m1.md plans/m1.md ship the loop')
+
+  expect(submitted).toHaveLength(1)
+  expect(submitted[0]).toContain('Workflow name=milestone-kickoff args={"milestone":"M1"')
+})
+
+test('/ouroboros resume submits the queued launch to the model', async ($, on) => {
+  const pending = { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } }
+  const submitted: string[] = []
+  worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'phase', paused: true, pending }) }, submitted)
+
+  await run($, 'resume')
+
+  expect(submitted).toEqual([expect.stringContaining('Workflow name=phase args={"milestone":"M1","phase":"P1"}')])
+})
+
+test('/ouroboros status submits nothing', async ($, on) => {
+  const submitted: string[] = []
+  worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight }, submitted)
+
+  await run($, 'status')
+
+  expect(submitted).toEqual([])
+})
+
+test('the loop header names the pending launch as the Workflow call to make', async ($, on) => {
+  const pending = { workflow: 'phase', args: { phase: 'P1' } }
+  worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'phase', pending }) })
+  on('prompt.context', (_, e) => ({ blocks: e.blocks }))
+
+  const { blocks } = await $.prompt.context({ blocks: [] })
+
+  expect(blocks[0]?.text).toContain('pending launch: Workflow name=phase args={"phase":"P1"}')
 })
 
 test('/ouroboros kickoff passes the configured per-stage effort map in the launch args', async ($, on) => {

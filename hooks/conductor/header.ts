@@ -1,4 +1,4 @@
-import type { Escalation, LoopState } from './state'
+import type { Escalation, Launch, LoopState } from './state'
 
 export const COMPACT_INSTRUCTIONS = 'Keep only the ouroboros loop header and the open escalations; drop everything else.'
 
@@ -6,7 +6,9 @@ const escalationLine = ({ kind, phase, summary, result_path }: Escalation) => `$
 
 export const escalationsText = (state: LoopState) => (state.escalations.length === 0 ? 'no escalations' : state.escalations.map(escalationLine).join('\n'))
 
-const pendingText = (state: LoopState) => (state.pending === undefined ? 'none' : `${state.pending.workflow} (run /ouroboros resume)`)
+export const workflowCall = (launch: Launch) => `Workflow name=${launch.workflow} args=${JSON.stringify(launch.args)}`
+
+const pendingText = (state: LoopState) => (state.pending === undefined ? 'none' : workflowCall(state.pending))
 
 export const loopHeader = (state: LoopState) =>
   [

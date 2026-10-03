@@ -5,7 +5,7 @@ import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathO
 import type { ActiveDrafts } from './drafts'
 import { digestedResult, isOversized } from './conductor/digest'
 import { bareName, isLoopNotification, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
-import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader } from './conductor/header'
+import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, workflowCall } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
@@ -170,7 +170,12 @@ async function activePlanText($: EngineInterface) {
   return (await $.fs.exists(path)) ? await $.fs.read(path) : undefined
 }
 
-const launchNote = (launch: Launch) => `launch now: Workflow name=${launch.workflow} args=${JSON.stringify(launch.args)} (or later with /ouroboros resume)`
+const launchNote = (launch: Launch) => `launch now: ${workflowCall(launch)} (or later with /ouroboros resume)`
+
+async function deliverPendingLaunch($: EngineInterface, state: LoopState) {
+  if (state.pending === undefined || state.paused) return
+  await $.session.send({ to: { sessionId: await $.session.id() }, text: launchNote(state.pending) })
+}
 
 const withEffort = (launch: Launch, effort: OuroborosConfig['effort']): Launch => {
   if (effort === undefined) return launch
@@ -205,8 +210,9 @@ async function resumeLoop($: EngineInterface, state: LoopState) {
     await writeLoopState($, resumed)
     return 'resumed: nothing queued'
   }
-  const { note } = await settle($, { state: resumed, launch: resumed.pending })
-  return note ?? 'resumed'
+  const settled = await settle($, { state: resumed, launch: resumed.pending })
+  await deliverPendingLaunch($, settled.state)
+  return settled.note ?? 'resumed'
 }
 
 const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
@@ -235,8 +241,9 @@ async function kickoff($: EngineInterface, args: string) {
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
   const state = kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath))
   const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan } }
-  const { note } = await settle($, { state, launch })
-  return [`spec: ${spec}`, `plan: ${plan}`, note ?? 'kickoff started'].join('\n')
+  const settled = await settle($, { state, launch })
+  await deliverPendingLaunch($, settled.state)
+  return [`spec: ${spec}`, `plan: ${plan}`, settled.note ?? 'kickoff started'].join('\n')
 }
 
 async function runConductorCommand($: EngineInterface, args: string) {
