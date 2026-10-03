@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { RETRO_PROMPT, checkpointPhaseOf, isRetroTrigger } from './retro'
+import { RETRO_PROMPT, checkpointPhaseOf, isGuardedMerge, isRetroTrigger } from './retro'
 
 test('a phase checkpoint commit triggers the retro', () => {
   expect(isRetroTrigger('git commit -m "phase(P0): add invoice export"', true)).toBe(true)
@@ -26,4 +26,10 @@ test('the phase a checkpoint commit names', () => {
 test('the retro also prunes agent memory lines that point at paths gone from the repository', () => {
   expect(RETRO_PROMPT).toContain('.claude/agent-memory/*.md')
   expect(RETRO_PROMPT).toContain('no longer exist in the repository')
+})
+
+test('a merge is guarded only in the main session, so a workflow\'s own merge agent is never refused', () => {
+  expect(isGuardedMerge('git merge origin/main', undefined)).toBe(true)
+  expect(isGuardedMerge('git merge --no-ff milestone/task-7', 'workflow-agent-1')).toBe(false)
+  expect(isGuardedMerge('git status', undefined)).toBe(false)
 })

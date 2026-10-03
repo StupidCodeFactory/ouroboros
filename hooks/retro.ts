@@ -16,6 +16,8 @@ const MERGE_OR_REBASE = /\b(git\s+(merge|rebase|pull)|gh\s+pr\s+merge)\b/
 
 export const isMergeOrRebase = (command: string) => MERGE_OR_REBASE.test(command)
 
+export const isGuardedMerge = (command: string, agentId: string | undefined) => agentId === undefined && isMergeOrRebase(command)
+
 export const isRetroTrigger = (command: string, hasSucceeded: boolean) => {
   if (!hasSucceeded) return false
   return PHASE_CHECKPOINT.test(command) || isPullRequestMerge(command)

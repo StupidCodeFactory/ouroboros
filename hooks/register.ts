@@ -29,7 +29,7 @@ import type { InlinedSkill } from './eager_skills/inline'
 import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
-import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isMergeOrRebase, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
+import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { duplicateLoadWarning, isAnotherInstance } from './double_load'
 import { stripFrontmatter } from './skill_text'
@@ -861,7 +861,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const writer = isMergeOrRebase(e.command) ? (await readLoopState($)).run : undefined
+    const writer = isGuardedMerge(e.command, e.agentId) ? (await readLoopState($)).run : undefined
     if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree` }
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
