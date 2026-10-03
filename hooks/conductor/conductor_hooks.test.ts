@@ -39,8 +39,38 @@ test('/ouroboros kickoff stores the drafts and hands the milestone-kickoff launc
   const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md ship the loop')
 
   const args = { milestone: 'M1', goal: 'ship the loop', spec: 'specs/m1.md', plan: 'plans/m1.md' }
-  expect(answered.text).toBe(`launch now: Workflow name=milestone-kickoff args=${JSON.stringify(args)} (or later with /ouroboros resume)`)
+  expect(answered.text).toBe(`spec: specs/m1.md\nplan: plans/m1.md\nlaunch now: Workflow name=milestone-kickoff args=${JSON.stringify(args)} (or later with /ouroboros resume)`)
   expect(stateOn(disk)).toMatchObject({ milestone: 'M1', phases: ['P0', 'P1'], status: 'kickoff', drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, pending: { workflow: 'milestone-kickoff', args } })
+})
+
+test('/ouroboros kickoff with only a milestone discovers the plan and its spec under drafts_dir', async ($, on) => {
+  const files = { 'work/loop.md': ['# M1 plan', '**Spec:** `design/loop-design.md`', PLAN].join('\n'), 'design/loop-design.md': '# design' }
+  const disk = new Map<string, string>([['.claude/ouroboros.json', CONFIG]])
+  on('process.run', (_, e) => {
+    const stdout = e.argv[0] === 'sh' ? Object.keys(files).map(path => `./${path}`).join('\n') : '/repo/.git\n'
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1] ?? Object.entries(files).find(([name]) => path.endsWith(`/${name}`))?.[1]
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    disk.set(e.path.slice(e.path.indexOf('.claude/')), e.text)
+    return { value: undefined }
+  })
+
+  const answered = await run($, 'kickoff M1')
+
+  expect(answered.text).toContain('spec: design/loop-design.md\nplan: work/loop.md')
+  expect(stateOn(disk)).toMatchObject({ milestone: 'M1', drafts: { spec: 'design/loop-design.md', plan: 'work/loop.md' } })
+})
+
+test('/ouroboros kickoff without a project config says how to create one and launches nothing', async ($, on) => {
+  const disk = worldBeneath(on, {})
+
+  const answered = await run($, 'kickoff M1')
+
+  expect(answered.text).toContain('no .claude/ouroboros.json')
+  expect(disk.has('.claude/ouroboros/state.json')).toBe(false)
 })
 
 test('/ouroboros kickoff passes the configured per-stage effort map in the launch args', async ($, on) => {

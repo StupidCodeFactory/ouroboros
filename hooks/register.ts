@@ -7,6 +7,7 @@ import { digestedResult, isOversized } from './conductor/digest'
 import { isLoopNotification, loopEventOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
+import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
 import { nextAction } from './conductor/transitions'
 import type { Action } from './conductor/transitions'
@@ -37,7 +38,7 @@ const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
 const RESULTS_DIR = '.claude/ouroboros/results'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> <spec> <plan> [goal]',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal]',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -208,16 +209,34 @@ async function resumeLoop($: EngineInterface, state: LoopState) {
   return note ?? 'resumed'
 }
 
+const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
+
+async function draftFiles($: EngineInterface, draftsRoot: string): Promise<DraftFile[]> {
+  const { stdout } = await $.process.run(['sh', '-c', 'cd "$1" && find . -name "*.md" -type f -print0 | xargs -0 -r ls -t', 'sh', draftsRoot])
+  const paths = stdout.split('\n').filter(Boolean).map(path => path.replace(/^\.\//, ''))
+  return Promise.all(paths.map(async path => ({ path, text: await $.fs.read(`${draftsRoot}/${path}`) })))
+}
+
+async function resolveDrafts($: EngineInterface, milestone: string, parsed: KickoffArgs): Promise<Discovery> {
+  if (parsed.spec !== undefined && parsed.plan !== undefined) return { drafts: { spec: parsed.spec, plan: parsed.plan } }
+  const draftsDir = (await readConfig($)).drafts_dir ?? ''
+  const draftsRoot = (await draftsPath($, '')).replace(/\/$/, '')
+  return discoverDrafts(await draftFiles($, draftsRoot), milestone, draftsDir)
+}
+
 async function kickoff($: EngineInterface, args: string) {
-  const [milestone, spec, plan, ...goal] = args.split(/\s+/).filter(Boolean)
-  if (milestone === undefined || spec === undefined || plan === undefined) return 'usage: /ouroboros kickoff <milestone> <spec> <plan> [goal]'
-  const drafts: ActiveDrafts = { spec, plan }
+  const parsed = kickoffArgs(args)
+  if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [goal]'
+  if (!(await $.fs.exists(CONFIG_PATH))) return MISSING_CONFIG
+  const discovery = await resolveDrafts($, parsed.milestone, parsed)
+  if ('error' in discovery) return discovery.error
+  const { spec, plan } = discovery.drafts
   const planPath = await draftsPath($, plan)
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
-  const state = kickoffState(milestone, drafts, await $.fs.read(planPath))
-  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone, goal: goal.join(' '), spec, plan } }
+  const state = kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath))
+  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan } }
   const { note } = await settle($, { state, launch })
-  return note ?? 'kickoff started'
+  return [`spec: ${spec}`, `plan: ${plan}`, note ?? 'kickoff started'].join('\n')
 }
 
 async function runConductorCommand($: EngineInterface, args: string) {
