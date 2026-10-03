@@ -233,9 +233,14 @@ async function activePlanText($: EngineInterface) {
 
 const launchNote = (launch: Launch) => `launch now: ${workflowCall(launch)} (or later with /ouroboros resume)`
 
-async function deliverPendingLaunch($: EngineInterface, state: LoopState) {
+const submitWhenIdle = ($: EngineInterface, text: string) =>
+  $.clock.after(0, () => {
+    $.prompt.submit({ text }).catch(error => $.ui.toast(loudly(error)))
+  })
+
+function deliverPendingLaunch($: EngineInterface, state: LoopState) {
   if (state.pending === undefined || state.paused) return
-  await $.session.send({ to: { sessionId: await $.session.id() }, text: launchNote(state.pending) })
+  submitWhenIdle($, launchNote(state.pending))
 }
 
 const MERGING_WORKFLOWS = new Set(['phase', 'milestone-exit'])
@@ -303,13 +308,13 @@ async function loopEvidence($: EngineInterface, state: LoopState): Promise<Evide
   }
 }
 
-async function offerPending($: EngineInterface, state: LoopState) {
+async function offerPending($: EngineInterface, state: LoopState, delivery: 'submit' | 'note-only' = 'submit') {
   if (state.pending === undefined) {
     await writeLoopState($, state)
     return 'nothing queued'
   }
   const settled = await settle($, { state: { ...state, pending: undefined }, launch: state.pending })
-  await deliverPendingLaunch($, settled.state)
+  if (delivery === 'submit') deliverPendingLaunch($, settled.state)
   return settled.note ?? 'launched'
 }
 
@@ -333,9 +338,9 @@ async function releasedFromMerge($: EngineInterface, state: LoopState): Promise<
   return mergeAccepted(state, (await readConfig($)).branch_prefix ?? 'milestone/')
 }
 
-async function continueLoop($: EngineInterface, state: LoopState) {
+async function continueLoop($: EngineInterface, state: LoopState, delivery: 'submit' | 'note-only' = 'submit') {
   const reconciled = reconcilePending(state, await loopEvidence($, state))
-  return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
+  return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state, delivery)}`].join('\n')
 }
 
 async function resumeLoop($: EngineInterface, state: LoopState) {
@@ -357,7 +362,7 @@ async function noticedMerge($: EngineInterface, state: LoopState) {
     await writeLoopState($, { ...state, merge_checked_at: now })
     return undefined
   }
-  return `${waiting.pr_url} merged; ${await continueLoop($, released)}`
+  return `${waiting.pr_url} merged; ${await continueLoop($, released, 'note-only')}`
 }
 
 const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
@@ -426,7 +431,7 @@ async function collect($: EngineInterface, state: LoopState, outputFile: string)
   const taskId = taskIdOfOutput(outputFile)
   if (state.run?.id === taskId) {
     const { state: settled, note } = await conductLoopResult($, state, state.run, `<task-id>${taskId}</task-id><output-file>${outputFile}</output-file>`)
-    await deliverPendingLaunch($, settled)
+    deliverPendingLaunch($, settled)
     return [`collected ${taskId}`, note].filter(Boolean).join(': ')
   }
   const json = workflowResultOf(await $.fs.read(outputFile))

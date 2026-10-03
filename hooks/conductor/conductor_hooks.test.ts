@@ -29,9 +29,9 @@ const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []
   on('ui.toast', () => ({ value: undefined }))
   on('session.receive', (_, e) => ({ text: e.text }))
   on('session.id', () => ({ value: 'main-session' }))
-  on('session.send', (_, e) => {
-    sent.push(e.text)
-    return { isDelivered: true as const }
+  on('prompt.submit', (_, e) => {
+    if (e.origin.kind === 'plugin') sent.push(e.text)
+    return { text: e.text }
   })
   return disk
 }
@@ -94,11 +94,14 @@ test('/ouroboros kickoff without a project config says how to create one and lau
   expect(disk.has('.claude/ouroboros/state.json')).toBe(false)
 })
 
-test('/ouroboros kickoff submits the launch line to the model so nobody has to relay it', async ($, on) => {
+test('/ouroboros kickoff submits the launch line as a prompt once the command has returned, since a message to the session itself never starts a turn', async ($, on) => {
   const submitted: string[] = []
   worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN }, submitted)
+  const clock = mock.clock(on)
 
   await run($, 'kickoff M1 specs/m1.md plans/m1.md ship the loop')
+  expect(submitted).toEqual([])
+  await clock.settle()
 
   expect(submitted).toHaveLength(1)
   expect(submitted[0]).toContain('Workflow name=milestone-kickoff args={"milestone":"M1"')
@@ -108,8 +111,10 @@ test('/ouroboros resume submits the queued launch to the model', async ($, on) =
   const pending = { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } }
   const submitted: string[] = []
   worldBeneath(on, { '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'phase', paused: true, pending }) }, submitted)
+  const clock = mock.clock(on)
 
   await run($, 'resume')
+  await clock.settle()
 
   expect(submitted).toEqual([expect.stringContaining('Workflow name=phase args={"milestone":"M1","phase":"P1","merge_policy":"ask"}')])
 })
@@ -310,7 +315,6 @@ test('a checkpointed phase notification is filed, starts the retro and is consum
 
 test('a workflow notification that arrives as a prompt is filed and dropped, since local task notifications never pass session.receive', async ($, on) => {
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight, '/repo/docs/drafts/plans/m1.md': PLAN })
-  on('prompt.submit', (_, e) => ({ text: e.text }))
   on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
 
   const submitted = await $.prompt.submit({ text: '<task-notification>\n<task-id>wf-1</task-id>\n<status>completed</status>\n<result>{"status":"checkpointed","tasks":[]}</result>\n</task-notification>', wait: false, origin: NOTIFICATION })
@@ -584,7 +588,7 @@ test('/ouroboros resume after the merge starts the held phase on a fresh branch'
   expect(stateOn(disk).awaiting_merge).toBeUndefined()
 })
 
-test('the conductor notices a merged phase PR on its own, at most once every five minutes, and starts the held phase', async ($, on) => {
+test('the conductor notices a merged phase PR on its own and hands the held phase\'s launch to the turn already running', async ($, on) => {
   const sent: string[] = []
   const disk = prWorld(on, 'MERGED', { sent, ghCalls: 0 })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
@@ -593,8 +597,10 @@ test('the conductor notices a merged phase PR on its own, at most once every fiv
   const context = await $.prompt.context({ blocks: [] })
 
   expect(stateOn(disk).awaiting_merge).toBeUndefined()
-  expect(sent.join('\n')).toContain('"fresh_branch":"milestone/m1-p1"')
-  expect(context.blocks.map(block => block.text).join('\n')).toContain('https://github.com/o/r/pull/841 merged')
+  const header = context.blocks.map(block => block.text).join('\n')
+  expect(header).toContain('https://github.com/o/r/pull/841 merged')
+  expect(header).toContain('"fresh_branch":"milestone/m1-p1"')
+  expect(sent).toEqual([])
 })
 
 test('an open phase PR is checked again only after five minutes', async ($, on) => {
