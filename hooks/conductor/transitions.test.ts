@@ -13,6 +13,13 @@ test('a finished kickoff launches the first phase', () => {
   expect(launch).toEqual({ workflow: 'phase', args: { milestone: 'M1', phase: 'P0', brief: 'go' } })
 })
 
+test('a finished kickoff with its brief filed passes the brief path, not the brief, to every phase', () => {
+  const { state, launch } = nextAction({ ...base, current: null, status: 'kickoff' }, { type: 'kickoff-done', brief: 'a very long brief', brief_path: '/repo/.claude/ouroboros/briefs/M1.md' })
+  expect(state).toMatchObject({ status: 'phase', current: 'P0', brief_path: '/repo/.claude/ouroboros/briefs/M1.md' })
+  expect(state.brief).toBeUndefined()
+  expect(launch).toEqual({ workflow: 'phase', args: { milestone: 'M1', phase: 'P0', brief_path: '/repo/.claude/ouroboros/briefs/M1.md' } })
+})
+
 test('a checkpointed phase starts the retro', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('retro')

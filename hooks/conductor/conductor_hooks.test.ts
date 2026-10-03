@@ -209,9 +209,11 @@ test('the real kickoff notification reads the full result from its output file a
   expect(stateOn(disk)).toMatchObject({
     status: 'phase',
     current: 'P0',
-    brief: 'M1 Foundations design brief (P0, P1). Branch milestone/m1-foundations.',
-    pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P0' } },
+    brief_path: '/repo/.git/.claude/ouroboros/briefs/M1.md',
+    pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P0', brief_path: '/repo/.git/.claude/ouroboros/briefs/M1.md' } },
   })
+  expect(stateOn(disk).pending.args.brief).toBeUndefined()
+  expect(disk.get('.claude/ouroboros/briefs/M1.md')).toBe('M1 Foundations design brief (P0, P1). Branch milestone/m1-foundations.')
   expect(stateOn(disk).run).toBeUndefined()
   expect(disk.get('.claude/ouroboros/results/wpsy5r9zt.json')).toContain('"red":true')
 })

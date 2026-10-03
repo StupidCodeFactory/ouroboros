@@ -58,7 +58,7 @@ Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint c
 
 An optional `effort` map sets the reasoning effort per workflow stage; the conductor passes it to every workflow it launches as `args.effort`, and a stage left out inherits the session effort. Stages: `brief`, `implement`, `review`, `architect_review`, `audit`, `fix`, `planner`, `checkpoint`, `merge`; values: `low`, `medium`, `high`, `xhigh`, `max`.
 
-Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief, tasks }` (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
+Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief_path, tasks }` (or an inline `brief` when no brief file exists; a long brief belongs in a file, never inline) (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
 
 ## Runtime state
 
@@ -71,6 +71,7 @@ ouroboros writes its runtime state under `.claude/ouroboros/` at the repository 
 - `state.json`: the conductor's loop state (milestone, phases, current phase, pending launch, run in flight, escalations).
 - `results/`: the full result of every loop workflow, plus every oversized result of a plugin agent or loop workflow, each filed by task or tool-use id.
 - `eager/`: each role's eager skills block (`<role>.md`, `implementer-<lane>.md`), written before a loop workflow launches and read by its agents first.
+- `briefs/`: the architect brief of each milestone kickoff (`<milestone>.md`), passed to every phase as `brief_path` instead of inline.
 - `spawns.jsonl`: one line per agent spawn with the skills inlined and their hashes.
 
 The committed `.claude/ouroboros.json` is configuration, not runtime state; keep it under version control.

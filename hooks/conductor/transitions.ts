@@ -2,15 +2,17 @@ import { firstUncheckedBox, phaseTasks } from '../drafts'
 import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
-  | { type: 'kickoff-done'; brief: string }
+  | { type: 'kickoff-done'; brief: string; brief_path?: string }
   | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
 export type Action = { state: LoopState; launch?: Launch; notify?: string }
 
+const briefArg = (state: LoopState) => (state.brief_path === undefined ? { brief: state.brief ?? '' } : { brief_path: state.brief_path })
+
 const phaseArgs = (state: LoopState, phase: string, planText: string | undefined) => {
-  const base = { milestone: state.milestone, phase, brief: state.brief ?? '' }
+  const base = { milestone: state.milestone, phase, ...briefArg(state) }
   if (planText === undefined) return base
   return { ...base, tasks: phaseTasks(planText, phase) }
 }
@@ -36,11 +38,14 @@ const launchPhase = (state: LoopState, phase: string, planText: string | undefin
   launch: phaseLaunch(state, phase, planText),
 })
 
-const onKickoffDone = (state: LoopState, brief: string, planText: string | undefined): Action => {
+const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>): LoopState =>
+  event.brief_path === undefined ? { ...state, brief: event.brief } : { ...state, brief_path: event.brief_path }
+
+const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>, planText: string | undefined): Action => {
   if (state.status !== 'kickoff') return { state }
   const first = state.phases[0]
   if (first === undefined) return { state: { ...state, status: 'idle' }, notify: `${state.milestone}: the plan has no phases` }
-  return launchPhase({ ...state, brief }, first, planText)
+  return launchPhase(withBrief(state, event), first, planText)
 }
 
 const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phase-result' }>): Action => {
@@ -69,7 +74,7 @@ const onExitResult = (state: LoopState, event: Extract<LoopEvent, { type: 'exit-
 }
 
 const transition = (state: LoopState, event: LoopEvent, planText: string | undefined): Action => {
-  if (event.type === 'kickoff-done') return onKickoffDone(state, event.brief, planText)
+  if (event.type === 'kickoff-done') return onKickoffDone(state, event, planText)
   if (event.type === 'phase-result') return onPhaseResult(state, event)
   if (event.type === 'retro-done') return onRetroDone(state, planText)
   return onExitResult(state, event)

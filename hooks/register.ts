@@ -10,7 +10,7 @@ import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
 import { nextAction } from './conductor/transitions'
-import type { Action } from './conductor/transitions'
+import type { Action, LoopEvent } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
@@ -38,6 +38,7 @@ const CONFIG_PATH = '.claude/ouroboros.json'
 const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
 const RESULTS_DIR = '.claude/ouroboros/results'
 const EAGER_DIR = '.claude/ouroboros/eager'
+const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
   description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal]',
@@ -268,6 +269,13 @@ async function runConductorCommand($: EngineInterface, args: string) {
   return 'paused: results are still recorded, launches are queued until /ouroboros resume'
 }
 
+async function withFiledBrief($: EngineInterface, milestone: string, event: LoopEvent): Promise<LoopEvent> {
+  if (event.type !== 'kickoff-done' || event.brief === '') return event
+  const briefPath = await projectPath($, `${BRIEFS_DIR}/${milestone}.md`)
+  await $.fs.write(briefPath, event.brief)
+  return { ...event, brief_path: briefPath }
+}
+
 async function appendToPlan($: EngineInterface, section: string) {
   const drafts = await activeDrafts($)
   if (section === '' || drafts === null) return
@@ -289,7 +297,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
-  const event = loopEventOf(text, resultPath, run, state.current, json)
+  const event = await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json))
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
 }
 

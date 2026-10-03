@@ -14,6 +14,7 @@ export type LoopState = {
   results: Record<string, string>
   drafts?: ActiveDrafts
   brief?: string
+  brief_path?: string
   run?: Run
   pending?: Launch
   paused?: boolean
