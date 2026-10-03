@@ -61,6 +61,7 @@ export const kickoffDecisionsOf = (run: Run, json: Record<string, unknown> | und
 }
 
 const kickoffEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
+  if (typeof json?.error === 'string' && json.error !== '') return { type: 'kickoff-done', brief: '', failed: json.error }
   const slices = briefSlicesOf(json)
   if (slices !== undefined) return { type: 'kickoff-done', brief: '', slices }
   return { type: 'kickoff-done', brief: typeof json?.brief === 'string' ? json.brief : '' }

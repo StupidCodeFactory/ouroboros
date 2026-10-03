@@ -71,3 +71,8 @@ test('an unmerged phase PR travels with the phase result', () => {
   const json = { status: 'checkpointed', phase: 'P0', pr_url: 'https://github.com/o/r/pull/841', tasks: [] }
   expect(loopEventOf('', 'r.json', run, 'P0', json)).toEqual({ type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r.json', pr_url: 'https://github.com/o/r/pull/841' })
 })
+
+test('a kickoff result that names an error is a failed kickoff', () => {
+  const json = { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
+  expect(loopEventOf('', 'k.json', { id: 'k', workflow: 'milestone-kickoff' }, null, json)).toEqual({ type: 'kickoff-done', brief: '', failed: 'architect returned nothing' })
+})

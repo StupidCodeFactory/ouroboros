@@ -7,7 +7,7 @@ import type { LaneOwnership } from './lanes'
 import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
-  | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string }
+  | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string; failed?: string }
   | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string; checkpoint_sha?: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
@@ -71,6 +71,9 @@ const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-
 
 const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>, planText: string | undefined, lanes: LaneOwnership): Action => {
   if (state.status !== 'kickoff') return { state }
+  if (event.failed !== undefined) {
+    return escalated(state, { kind: 'gate-refused', phase: 'kickoff', summary: event.failed, result_path: '' }, `${state.milestone} kickoff failed: ${event.failed}`)
+  }
   const first = state.phases[0]
   if (first === undefined) return { state: { ...state, status: 'idle' }, notify: `${state.milestone}: the plan has no phases` }
   return launchPhase(withBrief(state, event), first, planText, lanes)

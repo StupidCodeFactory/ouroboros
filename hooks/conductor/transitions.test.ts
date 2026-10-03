@@ -147,3 +147,10 @@ test('a phase launch carries the tasks the plan tags for it', () => {
   const { launch } = nextAction({ ...base, status: 'retro' }, { type: 'retro-done' }, PLAN)
   expect(launch?.args).toMatchObject({ phase: 'P1', tasks: [{ id: '2', title: 'b', unchecked: 1 }] })
 })
+
+test('a kickoff that failed escalates instead of launching a phase on an empty brief', () => {
+  const { state, launch, notify } = nextAction({ ...base, current: null, status: 'kickoff' }, { type: 'kickoff-done', brief: '', failed: 'fresh branch milestone/m1-p0 not created' })
+  expect(launch).toBeUndefined()
+  expect(state.status).toBe('escalated')
+  expect(notify).toBe('M1 kickoff failed: fresh branch milestone/m1-p0 not created')
+})
