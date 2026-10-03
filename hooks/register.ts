@@ -431,6 +431,8 @@ async function isPrematureCheckpoint($: EngineInterface, command: string) {
   return planText !== undefined && firstUncheckedBox(planText, phase) !== null
 }
 
+const phaseAfter = (state: LoopState, phase: string) => (state.phases.includes(phase) ? state.phases[state.phases.indexOf(phase) + 1] : undefined)
+
 const resultPhase = (json: Record<string, unknown> | undefined, state: LoopState) => (typeof json?.phase === 'string' ? json.phase : (state.current ?? ''))
 
 async function headCommit($: EngineInterface) {
@@ -478,7 +480,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
-  if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
+  if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json, phaseAfter(state, resultPhase(json, state))))
   await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
   const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)), json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))

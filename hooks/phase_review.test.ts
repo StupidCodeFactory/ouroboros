@@ -124,16 +124,20 @@ test('a non-blocking finding is neither', () => {
 
 test('phase follow-ups group by task, unowned ones under the phase', () => {
   const unowned = { reviewer: 'auditor', summary: 'Plan drift in Task 4.', blocking: true }
-  expect(phaseFollowUps({ phase: 'P0', follow_ups: [{ ...UNTOUCHED_CALLERS, task: '3' }, unowned] })).toBe(
-    followUpSection('P0', '3', [{ ...UNTOUCHED_CALLERS, task: '3' }]) + followUpSection('P0', 'P0', [unowned]),
+  expect(phaseFollowUps({ phase: 'P0', follow_ups: [{ ...UNTOUCHED_CALLERS, task: '3' }, unowned] }, 'P1')).toBe(
+    followUpSection('P0', '3', [{ ...UNTOUCHED_CALLERS, task: '3' }], 'P1') + followUpSection('P0', 'P0', [unowned], 'P1'),
   )
 })
 
-test('follow-ups land in the plan as one untagged task of unchecked boxes', () => {
-  expect(followUpSection('P0', '3', [UNTOUCHED_CALLERS])).toBe(
-    '\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n' +
+test('follow-ups land in the plan as a task of the next phase, named after the phase that raised them', () => {
+  expect(followUpSection('P0', '3', [UNTOUCHED_CALLERS], 'P1')).toBe(
+    '\n### Task 3-P0-follow-ups: follow-ups raised while reviewing P0 task 3 (P1)\n' +
       '- [ ] Untouched callers still reach the singleton through .instance: runner.rb:163 calls DashboardClient.instance.holes. (lib/shop/backfill/runner.rb:163, raised by reviewer)\n',
   )
+})
+
+test('follow-ups of the last phase stay untagged for the next milestone', () => {
+  expect(followUpSection('P2', '9', [UNTOUCHED_CALLERS], undefined)).toContain('### Task 9-P2-follow-ups: follow-ups raised while reviewing P2 task 9\n')
 })
 
 const WITHHELD_CHECKPOINT = {

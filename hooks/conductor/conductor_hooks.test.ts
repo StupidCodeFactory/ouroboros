@@ -355,7 +355,7 @@ test('follow-ups a phase raised outside a task diff are appended to the plan as 
   await $.session.receive({ origin: NOTIFICATION, text: `<task-notification>\n<task-id>wf-1</task-id>\n<output-file>${outputFile}</output-file>\n<status>completed</status>\n</task-notification>` })
 
   expect(disk.get('/repo/docs/drafts/plans/m1.md')).toBe(
-    `${PLAN}\n### Task 3-follow-ups: follow-ups raised while reviewing P0 task 3\n- [ ] Untouched callers still reach the singleton through .instance. (lib/shop/backfill/runner.rb:163, raised by reviewer)\n`,
+    `${PLAN}\n### Task 3-P0-follow-ups: follow-ups raised while reviewing P0 task 3 (P1)\n- [ ] Untouched callers still reach the singleton through .instance. (lib/shop/backfill/runner.rb:163, raised by reviewer)\n`,
   )
   expect(stateOn(disk)).toMatchObject({ status: 'retro' })
 })

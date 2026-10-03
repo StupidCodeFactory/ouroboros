@@ -59,8 +59,10 @@ const locationOf = (finding: ReviewFinding) => (finding.file === undefined ? '' 
 
 const followUpBox = (finding: ReviewFinding) => `- [ ] ${finding.summary} (${locationOf(finding)}raised by ${finding.reviewer ?? 'review'})\n`
 
-export const followUpSection = (phase: string, taskId: string, followUps: ReviewFinding[]) =>
-  `\n### Task ${taskId}-follow-ups: follow-ups raised while reviewing ${phase} task ${taskId}\n${followUps.map(followUpBox).join('')}`
+const phaseTag = (nextPhase: string | undefined) => (nextPhase === undefined ? '' : ` (${nextPhase})`)
+
+export const followUpSection = (phase: string, taskId: string, followUps: ReviewFinding[], nextPhase: string | undefined) =>
+  `\n### Task ${taskId}-${phase}-follow-ups: follow-ups raised while reviewing ${phase} task ${taskId}${phaseTag(nextPhase)}\n${followUps.map(followUpBox).join('')}`
 
 const groupedByTask = (followUps: ReviewFinding[], phase: string) => {
   const groups = new Map<string, ReviewFinding[]>()
@@ -68,10 +70,10 @@ const groupedByTask = (followUps: ReviewFinding[], phase: string) => {
   return [...groups]
 }
 
-export const phaseFollowUps = (json: Record<string, unknown> | undefined) => {
+export const phaseFollowUps = (json: Record<string, unknown> | undefined, nextPhase: string | undefined) => {
   if (!Array.isArray(json?.follow_ups) || json.follow_ups.length === 0) return ''
   const phase = typeof json.phase === 'string' ? json.phase : ''
-  return groupedByTask(json.follow_ups as ReviewFinding[], phase).map(([taskId, findings]) => followUpSection(phase, taskId, findings)).join('')
+  return groupedByTask(json.follow_ups as ReviewFinding[], phase).map(([taskId, findings]) => followUpSection(phase, taskId, findings, nextPhase)).join('')
 }
 
 export type Checkpoint = { committed: boolean; sha: string; suite_green: boolean; evidence: string }
