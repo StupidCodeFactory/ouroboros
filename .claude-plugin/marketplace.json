@@ -1,0 +1,14 @@
+{
+  "name": "ouroboros",
+  "description": "Ouroboros: a self-improving agent dev loop for Claude Code.",
+  "owner": {
+    "name": "StupidCodeFactory"
+  },
+  "plugins": [
+    {
+      "name": "ouroboros",
+      "source": "./",
+      "description": "The dev loop that eats its own mistakes."
+    }
+  ]
+}
