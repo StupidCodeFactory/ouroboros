@@ -31,6 +31,7 @@ import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
 import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isMergeOrRebase, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
+import { duplicateLoadWarning, isAnotherInstance } from './double_load'
 import { stripFrontmatter } from './skill_text'
 
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
@@ -649,6 +650,14 @@ async function spawnFresh($: EngineInterface, agentName: string, prompt: string)
 }
 
 export const register: Register = on => {
+  on('plugin.register', async ($, e, next) => {
+    const active = { name: $.plugin.name, root: $.plugin.root }
+    if (!isAnotherInstance(e, active)) return next(e)
+    const warning = duplicateLoadWarning(active, e)
+    $.ui.toast(warning)
+    return { refuse: warning }
+  })
+
   on('session.start', async ($, e, next) => {
     await $.command.register(SKILL_INCIDENT_COMMAND)
     await $.command.register(OUROBOROS_COMMAND)

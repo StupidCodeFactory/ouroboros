@@ -26,7 +26,7 @@ claude plugin marketplace add StupidCodeFactory/ouroboros
 claude plugin install ouroboros@ouroboros
 ```
 
-The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `env` of `~/.claude/settings.json`. To develop the plugin, point `CLAUDE_CODE_PLUGIN_DIRS` at a checkout instead of installing it; never do both, or every hook runs twice.
+If the plugin gets loaded twice (an installed copy plus a stale `--plugin-dir` or dev link), the instance loaded first refuses the second at `plugin.register` and toasts both roots, so every hook runs once. The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `env` of `~/.claude/settings.json`. To develop the plugin, point `CLAUDE_CODE_PLUGIN_DIRS` at a checkout instead of installing it; never do both, or every hook runs twice.
 
 ## Project setup
 
