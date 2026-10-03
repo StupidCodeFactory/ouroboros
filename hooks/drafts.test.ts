@@ -65,3 +65,20 @@ test('a heading tagged with a phase and a lane keeps both', () => {
   ])
   expect(planPhases(plan)).toEqual(['P1'])
 })
+
+const PLAN_WITH_DUPLICATE_IDS = [
+  '### Task 17: One month-range helper (P0)',
+  '- [x] Step 7: commit',
+  '### Task 18: Slim the web API (P1)',
+  '- [ ] Step 1',
+  '### Task 19: One Python contract test per service (P1)',
+  '- [ ] Step 1',
+  '### Task 18: Singletons reached through class methods (P1)',
+  '- [ ] Step 1',
+  '### Task 19: P0 review follow-ups (P1)',
+  '- [ ] Step 1',
+].join('\n')
+
+test('a plan with duplicate task ids fails loudly instead of running either copy', () => {
+  expect(() => phaseTasks(PLAN_WITH_DUPLICATE_IDS, 'P1')).toThrow('the plan has duplicate task ids: 18, 19; renumber them before running a phase')
+})

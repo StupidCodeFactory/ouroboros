@@ -36,6 +36,13 @@ const headingAt = (line: string, index: number): Heading | undefined => {
 
 const headingsOf = (lines: string[]) => lines.flatMap((line, index) => headingAt(line, index) ?? [])
 
+const duplicateIds = (headings: Heading[]) => [...new Set(headings.map(heading => heading.id).filter((id, position, ids) => ids.indexOf(id) !== position))]
+
+export const assertUniqueTaskIds = (planText: string) => {
+  const duplicates = duplicateIds(headingsOf(planText.split('\n')))
+  if (duplicates.length > 0) throw new Error(`the plan has duplicate task ids: ${duplicates.join(', ')}; renumber them before running a phase`)
+}
+
 const inPhase = (headings: Heading[], phase: string) => {
   if (headings.every(heading => heading.phase === undefined)) return headings
   return headings.filter(heading => heading.phase === phase)
@@ -59,6 +66,7 @@ const openBoxesIn = (lines: string[], heading: Heading): UncheckedBox[] =>
   })
 
 export const phaseTasks = (planText: string, phase: string): PhaseTask[] => {
+  assertUniqueTaskIds(planText)
   const lines = planText.split('\n')
   return inPhase(headingsOf(lines), phase).map(heading => ({
     id: heading.id,

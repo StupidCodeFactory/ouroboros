@@ -398,6 +398,20 @@ test('/ouroboros adopt and set repair state.json and print it before and after',
   expect(stateOn(disk)).toMatchObject({ status: 'escalated', current: 'P1' })
 })
 
+test('/ouroboros resume reports duplicate plan task ids instead of launching', async ($, on) => {
+  const plan = ['### Task 18: Slim the web API (P1)', '- [ ] Step 1', '### Task 18: Singletons reached through class methods (P1)', '- [ ] Step 1'].join('\n')
+  const queued = JSON.stringify({
+    milestone: 'M1', phases: ['P1'], current: 'P1', status: 'phase', escalations: [], results: {}, paused: true,
+    drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } },
+  })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': queued, '/repo/docs/drafts/plans/m1.md': plan })
+
+  const resumed = await run($, 'resume')
+
+  expect(resumed.text).toBe('ouroboros: the plan has duplicate task ids: 18; renumber them before running a phase')
+  expect(stateOn(disk)).toMatchObject({ paused: true })
+})
+
 test('the loop header rides on the prompt context', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight })
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))

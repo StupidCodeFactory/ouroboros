@@ -1,7 +1,7 @@
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
-import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
+import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, assertUniqueTaskIds, checkoutRootOf, draftsPathOf, firstUncheckedBox } from './drafts'
 import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
@@ -266,7 +266,15 @@ async function offerPending($: EngineInterface, state: LoopState) {
   return settled.note ?? 'launched'
 }
 
+async function assertPlanReady($: EngineInterface) {
+  const planText = await activePlanText($)
+  if (planText !== undefined) assertUniqueTaskIds(planText)
+}
+
+const loudly = (error: unknown) => `ouroboros: ${error instanceof Error ? error.message : String(error)}`
+
 async function resumeLoop($: EngineInterface, state: LoopState) {
+  await assertPlanReady($)
   const resumed = { ...state, paused: false }
   const reconciled = reconcilePending(resumed, await loopEvidence($, resumed))
   return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
@@ -297,6 +305,7 @@ async function kickoff($: EngineInterface, args: string) {
   const planPath = await draftsPath($, plan)
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
   const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan } }
+  assertUniqueTaskIds(await $.fs.read(planPath))
   const state = { ...kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath)), pending: launch }
   const reconciled = reconcilePending(state, await loopEvidence($, state))
   return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
@@ -620,15 +629,25 @@ export const register: Register = on => {
     return { text: `logged against ${skill}` }
   })
 
-  on('command.run', { command: OUROBOROS_COMMAND.name }, async ($, e) => ({ text: await runConductorCommand($, e.args) }))
+  on('command.run', { command: OUROBOROS_COMMAND.name }, async ($, e) => {
+    try {
+      return { text: await runConductorCommand($, e.args) }
+    } catch (error) {
+      return { text: loudly(error) }
+    }
+  })
 
   on('session.receive', { origin: { kind: 'task-notification' } }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const state = await readLoopState($)
     if (state.run === undefined || !isLoopNotification(e.text, state.run)) return next(e)
-    const { note } = await conductLoopResult($, state, state.run, e.text)
-    if (note === undefined) return { consumed: 'ouroboros conductor filed the result' }
-    return next({ ...e, text: note })
+    try {
+      const { note } = await conductLoopResult($, state, state.run, e.text)
+      if (note === undefined) return { consumed: 'ouroboros conductor filed the result' }
+      return next({ ...e, text: note })
+    } catch (error) {
+      return next({ ...e, text: `${e.text}\n\n${loudly(error)}` })
+    }
   })
 
   on('prompt.context', async ($, e, next) => {
