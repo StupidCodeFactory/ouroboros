@@ -5,10 +5,14 @@ export const PLUGIN_SKILLS = new Set(['phase-pr-workflow', 'code-style', 'planni
 export const incidentRow = (finding: Finding, phase: string, dateIso: string) =>
   `| ${dateIso} | ${phase} | ${finding.agent ?? ''} | ${finding.root_cause} | | ${finding.summary} | ${finding.file ?? ''}:${finding.line ?? ''} | open | |\n`
 
-const skillIncidentPath = (skill: string | undefined, pluginRoot: string) =>
-  PLUGIN_SKILLS.has(skill ?? '') ? `${pluginRoot}/skills/${skill}/incidents.md` : `.claude/skills/${skill}/incidents.md`
+const bareName = (name: string) => name.slice(name.lastIndexOf(':') + 1)
+
+const skillIncidentPath = (skill: string | undefined, pluginRoot: string) => {
+  const skillName = bareName(skill ?? '')
+  return PLUGIN_SKILLS.has(skillName) ? `${pluginRoot}/skills/${skillName}/incidents.md` : `.claude/skills/${skillName}/incidents.md`
+}
 
 export const incidentLogPath = (finding: Finding, pluginRoot: string) =>
   finding.root_cause === 'agent-behaviour'
-    ? `${pluginRoot}/agents/incidents/${finding.agent}.md`
+    ? `${pluginRoot}/agents/incidents/${bareName(finding.agent ?? '')}.md`
     : skillIncidentPath(finding.skill, pluginRoot)

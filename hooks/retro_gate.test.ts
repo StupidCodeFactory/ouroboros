@@ -24,7 +24,7 @@ test('a phase checkpoint commit starts the skill-curator retro', async ($, on) =
   await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): add invoice export"' })
 
   expect(spawned).toHaveLength(1)
-  expect(spawned[0]).toMatchObject({ subagent_type: 'skill-curator', run_in_background: true })
+  expect(spawned[0]).toMatchObject({ subagent_type: 'ouroboros:skill-curator', run_in_background: true })
   expect(toasts).toEqual(['retro started'])
 })
 
@@ -67,6 +67,15 @@ test('the phase workflow is denied while an incident is open', async ($, on) => 
 
   expect(answered.text ?? answered.deny).toContain('retro pending')
   expect(reached).toEqual([])
+})
+
+test('the plugin-prefixed implementer is gated too', async ($, on) => {
+  grepAnswers(on, ONE_OPEN_INCIDENT)
+  on('tool.call', { tool: 'Agent' }, () => ({ deny: 'unreachable' }))
+
+  const answered = await $.tool.call({ tool: 'Agent', description: 'build', prompt: 'build it', subagent_type: 'ouroboros:implementer' })
+
+  expect(answered.text ?? answered.deny).toContain('retro pending')
 })
 
 test('an implementer runs when no incident is open', async ($, on) => {
