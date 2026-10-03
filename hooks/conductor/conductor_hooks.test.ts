@@ -283,6 +283,17 @@ test('a checkpointed phase notification is filed, starts the retro and is consum
   expect(stateOn(disk)).toMatchObject({ status: 'retro', results: { P0: '.claude/ouroboros/results/wf-1.json' }, run: { workflow: 'retro' } })
 })
 
+test('a workflow notification that arrives as a prompt is filed and dropped, since local task notifications never pass session.receive', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight, '/repo/docs/drafts/plans/m1.md': PLAN })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
+
+  const submitted = await $.prompt.submit({ text: '<task-notification>\n<task-id>wf-1</task-id>\n<status>completed</status>\n<result>{"status":"checkpointed","tasks":[]}</result>\n</task-notification>', wait: false, origin: NOTIFICATION })
+
+  expect(submitted.drop).toContain('ouroboros')
+  expect(stateOn(disk)).toMatchObject({ status: 'retro', results: { P0: '.claude/ouroboros/results/wf-1.json' }, run: { workflow: 'retro' } })
+})
+
 test('follow-ups a phase raised outside a task diff are appended to the plan as unchecked boxes', async ($, on) => {
   const outputFile = '/tmp/tasks/wf-1.output'
   const followUp = { reviewer: 'reviewer', file: 'lib/shop/backfill/runner.rb', line: 163, summary: 'Untouched callers still reach the singleton through .instance.', blocking: true }

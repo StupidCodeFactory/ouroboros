@@ -445,6 +445,17 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
 
+async function conductNotification($: EngineInterface, text: string): Promise<{ filed: string } | { text: string } | undefined> {
+  const state = await readLoopState($)
+  if (state.run === undefined || !isLoopNotification(text, state.run)) return undefined
+  try {
+    const { note } = await conductLoopResult($, state, state.run, text)
+    return note === undefined ? { filed: 'ouroboros conductor filed the result' } : { text: note }
+  } catch (error) {
+    return { text: `${text}\n\n${loudly(error)}` }
+  }
+}
+
 async function repositoryRoot($: EngineInterface) {
   const { stdout } = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
   return stdout.trim() || (await $.session.cwd())
@@ -701,15 +712,10 @@ export const register: Register = on => {
 
   on('session.receive', { origin: { kind: 'task-notification' } }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
-    const state = await readLoopState($)
-    if (state.run === undefined || !isLoopNotification(e.text, state.run)) return next(e)
-    try {
-      const { note } = await conductLoopResult($, state, state.run, e.text)
-      if (note === undefined) return { consumed: 'ouroboros conductor filed the result' }
-      return next({ ...e, text: note })
-    } catch (error) {
-      return next({ ...e, text: `${e.text}\n\n${loudly(error)}` })
-    }
+    const conducted = await conductNotification($, e.text)
+    if (conducted === undefined) return next(e)
+    if ('filed' in conducted) return { consumed: conducted.filed }
+    return next({ ...e, text: conducted.text })
   })
 
   on('prompt.context', async ($, e, next) => {
@@ -725,8 +731,14 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    await logCandidateLesson($, e.text)
-    return next(e)
+    if (e.origin.kind !== 'task-notification') {
+      await logCandidateLesson($, e.text)
+      return next(e)
+    }
+    const conducted = await conductNotification($, e.text)
+    if (conducted === undefined) return next(e)
+    if ('filed' in conducted) return { drop: conducted.filed }
+    return next({ ...e, text: conducted.text })
   })
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
