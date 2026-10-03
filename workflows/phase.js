@@ -223,10 +223,10 @@ const hunkLine = hunk => `- ${hunk.file}:${hunk.start}-${hunk.end}`
 const LEAN_FIX_RULE =
   'Read only that plan section, the brief slice and the diff above; do not re-read the full brief, the whole plan or your skills, your agent memory carries the rest. Fix these findings and nothing else.'
 
-const fixPrompt = (entry, blocking) =>
+const fixPrompt = (entry, blocking, isolated) =>
   `${lanePrefix(entry.task)}${taskHeading(entry.task)}: fix round.\n${planReference(entry.task)}\n${sliceText(entry.task)}` +
   `Task diff (commits ${entry.commits.join(', ') || 'none'}):\n${entry.hunks.map(hunkLine).join('\n')}\n${LEAN_FIX_RULE}\n` +
-  `Blocking findings:\n${JSON.stringify(distinctFindings(blocking))}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+  `Blocking findings:\n${JSON.stringify(distinctFindings(blocking))}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
 
@@ -273,13 +273,14 @@ const runWave = async wave => (wave.length === 1 ? [await implementInPlace(wave[
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
-const fix = (entry, blocking, round) =>
-  agent(fixPrompt(entry, blocking), {
+const fix = (entry, blocking, round, isolated) =>
+  agent(fixPrompt(entry, blocking, isolated), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Review',
-    label: `fix:${entry.task.id}:r${round}`,
+    label: `fix:${entry.task.id}:r${round}${isolated ? ':worktree' : ''}`,
     effort: stageEffort(args.effort, 'fix'),
+    ...isolationOf(isolated),
   })
 
 const commonBrief = () => (args.brief_dir ? `Common brief: ${args.brief_dir}/common.md; each task's slice is ${args.brief_dir}/<task id>.md.\n` : '')
@@ -329,10 +330,29 @@ const recordFix = (entry, fixed) => {
   return fixed.hunks ?? []
 }
 
+const fixInPlace = async (entry, blocking, round) => recordFix(entry, await fix(entry, blockingOf(entry, blocking), round, false))
+
+const fixedEntry = (entry, fixed) => ({ task: entry.task, changed: Boolean(fixed) && fixed.changed !== false, branch: (fixed && fixed.branch) || '' })
+
+const fixParallelWave = async (wave, blocking, round) => {
+  const fixed = await parallel(wave.map(entry => () => fix(entry, blockingOf(entry, blocking), round, true)))
+  const isolated = wave.map((entry, position) => fixedEntry(entry, fixed[position]))
+  const branches = isolated.filter(candidate => candidate.changed && candidate.branch)
+  const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
+  const retried = tasksToRetry(isolated, merge).map(candidate => candidate.task.id)
+  const hunks = wave.flatMap((entry, position) => (merge.merged.includes(entry.task.id) ? recordFix(entry, fixed[position]) : []))
+  for (const entry of wave.filter(candidate => retried.includes(candidate.task.id))) hunks.push(...(await fixInPlace(entry, blocking, round)))
+  return hunks
+}
+
+const filesOf = entry => [...new Set(entry.hunks.map(hunk => hunk.file))]
+
 const fixRound = async (entries, blocking, round) => {
+  const due = entries.filter(candidate => blockingOf(candidate, blocking).length)
   const fixHunks = []
-  for (const entry of entries.filter(candidate => blockingOf(candidate, blocking).length)) {
-    fixHunks.push(...recordFix(entry, await fix(entry, blockingOf(entry, blocking), round)))
+  for (const wave of taskWaves(due.map(entry => ({ ...entry, id: entry.task.id, touches: filesOf(entry) })))) {
+    const waveEntries = wave.map(planned => due.find(entry => entry.task.id === planned.id))
+    fixHunks.push(...(waveEntries.length === 1 ? await fixInPlace(waveEntries[0], blocking, round) : await fixParallelWave(waveEntries, blocking, round)))
   }
   return fixHunks
 }
