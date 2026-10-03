@@ -47,6 +47,7 @@ const phaseEvent = (json: Record<string, unknown> | undefined, phase: string | n
   status: json?.status === 'checkpointed' ? 'checkpointed' : 'escalate',
   phase: typeof json?.phase === 'string' ? json.phase : (phase ?? ''),
   result_path: resultPath,
+  ...(typeof json?.failing_gate === 'string' && json.failing_gate !== '' ? { failing_gate: json.failing_gate } : {}),
 })
 
 const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {

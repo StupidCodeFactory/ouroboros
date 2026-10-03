@@ -48,12 +48,14 @@ const checksPrompt = () =>
 const pullRequestPrompt = evidence =>
   eagerPreamble('implementer.md') +
   `Milestone ${args.milestone}: push ${branchName()} and open the pull request against the default branch, ` +
-  `following the repository's branch and PR conventions in .claude/ouroboros.json. Put this evidence in the description:\n${evidence}\nReturn the PR url.`
+  `following the repository's branch and PR conventions in .claude/ouroboros.json. Put this evidence in the description:\n${evidence}\n` +
+  'Every phase PR has normally merged already: when the branch has nothing ahead of the default branch, open no PR and return the url of the last merged phase PR. Return the PR url.'
 
 const mergePrompt = prUrl =>
   eagerPreamble('architect.md') +
   `Milestone ${args.milestone}: final review of ${prUrl}. Check every gate: milestone checks green, CI green, no open incidents, ` +
-  'every plan box for this milestone ticked, decisions recorded. Merge only if every gate passes; otherwise name the failing gate and leave it open.'
+  'every plan box for this milestone ticked, decisions recorded. When the PR is already merged, return merged true. ' +
+  'Otherwise merge only if every gate passes, with `gh pr merge <number> --merge`; else name the failing gate and leave it open.'
 
 const refused = (evidence, prUrl, failingGate) => ({ checks_green: prUrl !== '', evidence, pr_url: prUrl, merged: false, failing_gate: failingGate })
 

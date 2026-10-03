@@ -19,12 +19,12 @@ Track every step with the plan's checkboxes per the `checkbox-progress` skill: s
 
 ## Branch and commits
 
-- One branch per milestone off a fresh `origin/main`, named `<branch_prefix><milestone>-<slug>` with `branch_prefix` from `.claude/ouroboros.json`. No stacked PRs.
+- One branch per milestone off a fresh `origin/main`, named `<branch_prefix><milestone>-<slug>` with `branch_prefix` from `.claude/ouroboros.json`. No stacked PRs: every phase PR goes from the milestone branch into the default branch.
 - Each phase ends in one checkpoint commit whose subject starts `phase(PN):`. That commit is the retro trigger. Only the phase checkpoint makes it, after every task of the phase is done, reviewed and the full suite is green. A task or fix commit never starts with `phase(`, even for the last task of a phase; use a conventional subject (`feat:`, `fix:`, `refactor:`, `test:`).
 - Work in your own worktree with your own test database; never run two suites against one database.
 
 ## Evidence and merge
 
-- Paste the auditor's evidence (command, exit code, decisive output lines) into the phase checkpoint and the milestone PR body.
-- Never merge. Only the architect merges, only milestone PRs, only when CI is green, every milestone check is green with evidence, reviewer and architect have zero blocking findings, and no incident is open.
+- Each phase ends in its own PR from the milestone branch into the default branch, opened after the checkpoint, titled `<milestone> <phase>: <summary>`, with the auditor's evidence (command, exit code, decisive output lines) and the phase review outcome in the body.
+- Never merge. Only the architect merges, phase PRs with `gh pr merge --merge` (never squash or rebase: the milestone branch carries on into the next phase), only when CI is green, the checkpoint is green with evidence and the phase review left zero blocking findings. At milestone exit every milestone check must also be green and no incident open.
 - The same failure surviving three fix rounds is escalated to the user, not retried a fourth time.

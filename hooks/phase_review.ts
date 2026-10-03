@@ -109,3 +109,11 @@ export const tasksToRetry = <E extends { task: { id: string }; changed: boolean 
   entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
 
 export const distinctFindings = (findings: ReviewFinding[]) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
+
+export type PhaseMerge = { pr_url: string; merged: boolean; failing_gate: string }
+
+export const mergeVerdict = (merge: PhaseMerge | null) => {
+  if (!merge) return { status: 'escalate', failing_gate: 'phase PR merge returned nothing' }
+  if (merge.merged) return { status: 'checkpointed', failing_gate: '' }
+  return { status: 'escalate', failing_gate: merge.failing_gate || 'phase PR not merged' }
+}

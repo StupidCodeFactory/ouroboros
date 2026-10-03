@@ -111,12 +111,13 @@ test('writing a non-draft file touches nothing', async ($, on) => {
   expect(spawned).toEqual([])
 })
 
-test('a merged PR starts the retro and the ADR acceptance', async ($, on) => {
+test('a merged milestone PR starts the retro and the ADR acceptance', async ($, on) => {
   const spawned = spawnsBeneath(on)
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  on('fs.exists', () => ({ value: false }))
 
-  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --squash' })
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --merge' })
 
   expect(spawned.map(spawn => spawn.subagent_type)).toEqual(['ouroboros:skill-curator', 'ouroboros:adr-scribe'])
   expect(spawned[1]?.prompt).toContain('fill Outcome and Verification, set Accepted')

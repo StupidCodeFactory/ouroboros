@@ -6,7 +6,7 @@ import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
   | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string }
-  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string }
+  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
@@ -67,7 +67,7 @@ const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phas
   if (state.status !== 'phase') return { state }
   const results = { ...state.results, [event.phase]: event.result_path }
   if (event.status === 'escalate') {
-    const escalation: Escalation = { kind: 'task-red', phase: event.phase, summary: `${event.phase} escalated after its fix rounds`, result_path: event.result_path }
+    const escalation: Escalation = { kind: 'task-red', phase: event.phase, summary: event.failing_gate ? `${event.phase}: ${event.failing_gate}` : `${event.phase} escalated after its fix rounds`, result_path: event.result_path }
     return escalated({ ...state, results }, escalation, `${state.milestone} ${event.phase} escalated: see ${event.result_path}`)
   }
   return { state: { ...state, status: 'retro', results }, launch: { workflow: 'retro', args: {} } }

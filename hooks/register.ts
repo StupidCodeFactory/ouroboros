@@ -647,6 +647,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
     if (await isPrematureCheckpoint($, e.command)) return ran
+    if (isPullRequestMerge(e.command) && (await readLoopState($)).status === 'phase') return ran
 
     await startRetro($)
     if (isPullRequestMerge(e.command)) await askAdrScribe($, ACCEPT_MILESTONE_ADRS)

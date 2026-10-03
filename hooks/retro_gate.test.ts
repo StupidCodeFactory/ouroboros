@@ -58,6 +58,22 @@ test('a phase commit made while that phase still has open plan boxes starts no r
   expect(spawned).toEqual([])
 })
 
+test('merging a phase PR starts no second retro and accepts no ADRs', async ($, on) => {
+  const spawned: object[] = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e)
+    return { model: 'fable', agentId: 'curator-1' }
+  })
+  const state = JSON.stringify({ milestone: 'M1', status: 'phase', current: 'P0' })
+  on('fs.exists', (_, e) => ({ value: e.path.endsWith('.claude/ouroboros/state.json') }))
+  on('fs.read', () => ({ value: state }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+
+  await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --merge' })
+
+  expect(spawned).toEqual([])
+})
+
 test('a failed checkpoint commit starts nothing', async ($, on) => {
   const spawned: object[] = []
   on('agent.spawn', (_, e) => {

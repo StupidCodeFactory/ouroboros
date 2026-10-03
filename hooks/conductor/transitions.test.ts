@@ -36,6 +36,11 @@ test('a kickoff with a sliced brief passes the brief directory and each task\'s 
   })
 })
 
+test('a phase whose PR the architect left open escalates with the failing gate', () => {
+  const { state } = nextAction({ ...base }, { type: 'phase-result', status: 'escalate', phase: 'P0', result_path: 'r0.json', failing_gate: 'CI red: rspec' })
+  expect(state.escalations).toEqual([{ kind: 'task-red', phase: 'P0', summary: 'P0: CI red: rspec', result_path: 'r0.json' }])
+})
+
 test('a checkpointed phase starts the retro', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('retro')
