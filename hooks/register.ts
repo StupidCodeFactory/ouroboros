@@ -317,7 +317,7 @@ async function subdirectories($: EngineInterface, path: string) {
 
 const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-async function manifestSkills($: EngineInterface, versionDir: string): Promise<string[] | undefined> {
+async function manifestSkills($: EngineInterface, versionDir: string): Promise<string | string[] | undefined> {
   const manifestPath = `${versionDir}/.claude-plugin/plugin.json`
   if (!(await $.fs.exists(manifestPath))) return undefined
   return JSON.parse(await $.fs.read(manifestPath)).skills

@@ -17,11 +17,14 @@ const dirName = (path: string) => path.slice(0, path.lastIndexOf('/'))
 
 const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-export const pluginSkillRoots = (versionDir: string, manifestSkills: string[] | undefined): PluginSkillRoot[] => {
+const withoutDotSlash = (path: string) => path.replace(/^\.\//, '')
+
+export const pluginSkillRoots = (versionDir: string, manifestSkills: string | string[] | undefined): PluginSkillRoot[] => {
   if (manifestSkills === undefined) return [[`${versionDir}/skills`, undefined]]
+  if (typeof manifestSkills === 'string') return [[`${versionDir}/${withoutDotSlash(manifestSkills).replace(/\/$/, '')}`, undefined]]
   const byRoot = new Map<string, string[]>()
   for (const entry of manifestSkills) {
-    const root = `${versionDir}/${dirName(entry.replace(/^\.\//, ''))}`
+    const root = `${versionDir}/${dirName(withoutDotSlash(entry))}`
     byRoot.set(root, [...(byRoot.get(root) ?? []), baseName(entry)])
   }
   return [...byRoot]

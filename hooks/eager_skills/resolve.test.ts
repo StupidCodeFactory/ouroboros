@@ -45,3 +45,7 @@ test('a plugin manifest places its skills, nested or not', () => {
   ])
   expect(pluginSkillRoots('/cache/market/tooling/1.0.0', undefined)).toEqual([['/cache/market/tooling/1.0.0/skills', undefined]])
 })
+
+test('a manifest naming one skills directory as a string lists that directory', () => {
+  expect(pluginSkillRoots('/cache/market/tooling/1.0.0', './design/')).toEqual([['/cache/market/tooling/1.0.0/design', undefined]])
+})
