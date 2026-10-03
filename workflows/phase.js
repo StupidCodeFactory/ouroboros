@@ -38,6 +38,7 @@ const IMPLEMENT_SCHEMA = {
   properties: {
     changed: { type: 'boolean' },
     blocked: { type: 'boolean' },
+    handoff: { type: 'string' },
     commits: { type: 'array', items: { type: 'string' } },
     hunks: {
       type: 'array',
@@ -50,7 +51,7 @@ const IMPLEMENT_SCHEMA = {
     evidence: { type: 'string' },
     branch: { type: 'string' },
   },
-  required: ['changed', 'blocked', 'commits', 'hunks', 'evidence', 'branch'],
+  required: ['changed', 'blocked', 'commits', 'hunks', 'evidence', 'branch', 'handoff'],
 }
 
 const MERGE_SCHEMA = {
@@ -124,7 +125,8 @@ const COMMIT_RULE =
 
 const RESULT_INSTRUCTION =
   '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `blocked` (true when you could not do the task, e.g. a tool refused or a dependency is missing; name the blocker in `evidence`), `commits` (the shas you made), ' +
-  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output) and `branch` (the branch your commits are on).'
+  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output), `branch` (the branch your commits are on) ' +
+  'and `handoff` (at most 300 words for whoever fixes this task later: your decisions and why, the gotchas you hit, the exact test commands that prove the task, files you chose not to touch and why).'
 
 const needsReview = (implemented) => implemented?.changed !== false
 
@@ -214,6 +216,12 @@ const tasksToRetry = (entries, merge) =>
 
 const distinctFindings = (findings) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
 
+const fixRequests = (entries, blocking) =>
+  entries.flatMap(entry => {
+    const findings = distinctFindings(blocking.filter(finding => finding.task === entry.task.id))
+    return findings.length === 0 ? [] : [{ entry, findings, handoff: entry.handoff ?? '' }]
+  })
+
 const checkpointVerdict = (checkpoint) => {
   if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
   const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
@@ -226,9 +234,13 @@ const IMPLEMENT_INSTRUCTION =
 
 const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of this phase: commit on its branch and never merge.'
 
+const handoffPath = task => (args.eager_dir ? args.eager_dir.replace(/\/eager$/, `/handoffs/${args.milestone}-${args.phase}/${task.id}.md`) : '')
+
+const handoffFileNote = task => (handoffPath(task) ? `\nAlso write your handoff note to ${handoffPath(task)}, replacing any older one, so it survives this session.` : '')
+
 const implementPrompt = (task, isolated) =>
   `${eagerPreamble(implementerFile(task))}${lanePrefix(task)}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
-  `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+  `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}${handoffFileNote(task)}`
 
 const sliceText = task => (args.brief_dir ? `Brief slice: ${args.brief_dir}/${task.id}.md.\n` : '')
 
@@ -237,10 +249,16 @@ const hunkLine = hunk => `- ${hunk.file}:${hunk.start}-${hunk.end}`
 const LEAN_FIX_RULE =
   'Read only that plan section, the brief slice and the diff above; do not re-read the full brief, the whole plan or your skills, your agent memory carries the rest. Fix these findings and nothing else.'
 
-const fixPrompt = (entry, blocking, isolated) =>
-  `${lanePrefix(entry.task)}${taskHeading(entry.task)}: fix round.\n${planReference(entry.task)}\n${sliceText(entry.task)}` +
-  `Task diff (commits ${entry.commits.join(', ') || 'none'}):\n${entry.hunks.map(hunkLine).join('\n')}\n${LEAN_FIX_RULE}\n` +
-  `Blocking findings:\n${JSON.stringify(distinctFindings(blocking))}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
+const ADDRESS_EVERY_FINDING =
+  'Address every finding: fix it, or reject it only by citing a test or a code line in `evidence`; the reviewer rechecks every rejection.'
+
+const handoffText = request =>
+  `Handoff note from this task's implementer${handoffPath(request.entry.task) ? ` (also at ${handoffPath(request.entry.task)})` : ''}:\n${request.handoff || 'none was left; rebuild what you need from the diff.'}\n`
+
+const fixPrompt = (request, isolated) =>
+  `${lanePrefix(request.entry.task)}${taskHeading(request.entry.task)}: fix round.\n${planReference(request.entry.task)}\n${sliceText(request.entry.task)}` +
+  `Task diff (commits ${request.entry.commits.join(', ') || 'none'}):\n${request.entry.hunks.map(hunkLine).join('\n')}\n${handoffText(request)}${LEAN_FIX_RULE}\n` +
+  `Blocking findings:\n${JSON.stringify(request.findings)}\n${ADDRESS_EVERY_FINDING}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}${handoffFileNote(request.entry.task)}`
 
 const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
 
@@ -309,12 +327,12 @@ const runWave = async wave => (wave.length === 1 ? [await implementInPlace(wave[
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
-const fix = (entry, blocking, round, isolated) =>
-  agent(fixPrompt(entry, blocking, isolated), {
+const fix = (request, round, isolated) =>
+  agent(fixPrompt(request, isolated), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Review',
-    label: `fix:${entry.task.id}:r${round}${isolated ? ':worktree' : ''}`,
+    label: `fix:${request.entry.task.id}:r${round}${isolated ? ':worktree' : ''}`,
     effort: stageEffort(args.effort, 'fix'),
     ...isolationOf(isolated),
   })
@@ -359,36 +377,52 @@ const diffsOf = entries => Object.fromEntries(entries.map(entry => [entry.task.i
 
 const blockingOf = (entry, blocking) => blocking.filter(finding => finding.task === entry.task.id)
 
+const FIX_LOG = []
+
+const fixOutcome = fixed => {
+  if (isBlocked(fixed)) return 'blocked'
+  return (fixed.commits ?? []).length ? 'fixed' : 'unchanged'
+}
+
+const logFix = (entry, round, fixed) => FIX_LOG.push({ task: entry.task.id, round, mode: 'handoff', outcome: fixOutcome(fixed) })
+
 const recordFix = (entry, fixed) => {
   if (!fixed) return []
+  if (fixed.handoff) entry.handoff = fixed.handoff
   entry.commits.push(...(fixed.commits ?? []))
   entry.hunks.push(...(fixed.hunks ?? []))
   return fixed.hunks ?? []
 }
 
-const fixInPlace = async (entry, blocking, round) => recordFix(entry, await fix(entry, blockingOf(entry, blocking), round, false))
+const fixInPlace = async (request, round) => {
+  const fixed = await fix(request, round, false)
+  logFix(request.entry, round, fixed)
+  return recordFix(request.entry, fixed)
+}
 
 const fixedEntry = (entry, fixed) => ({ task: entry.task, changed: isBlocked(fixed) || fixed.changed !== false, branch: (!isBlocked(fixed) && fixed.branch) || '' })
 
-const fixParallelWave = async (wave, blocking, round) => {
-  const fixed = await parallel(wave.map(entry => () => fix(entry, blockingOf(entry, blocking), round, true)))
-  const isolated = wave.map((entry, position) => fixedEntry(entry, fixed[position]))
+const fixParallelWave = async (wave, round) => {
+  const fixed = await parallel(wave.map(request => () => fix(request, round, true)))
+  const isolated = wave.map((request, position) => fixedEntry(request.entry, fixed[position]))
   const branches = isolated.filter(candidate => candidate.changed && candidate.branch)
   const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
   const retried = tasksToRetry(isolated, merge).map(candidate => candidate.task.id)
-  const hunks = wave.flatMap((entry, position) => (merge.merged.includes(entry.task.id) ? recordFix(entry, fixed[position]) : []))
-  for (const entry of wave.filter(candidate => retried.includes(candidate.task.id))) hunks.push(...(await fixInPlace(entry, blocking, round)))
+  const merged = wave.filter(request => merge.merged.includes(request.entry.task.id))
+  merged.forEach(request => logFix(request.entry, round, fixed[wave.indexOf(request)]))
+  const hunks = merged.flatMap(request => recordFix(request.entry, fixed[wave.indexOf(request)]))
+  for (const request of wave.filter(candidate => retried.includes(candidate.entry.task.id))) hunks.push(...(await fixInPlace(request, round)))
   return hunks
 }
 
 const filesOf = entry => [...new Set(entry.hunks.map(hunk => hunk.file))]
 
 const fixRound = async (entries, blocking, round) => {
-  const due = entries.filter(candidate => blockingOf(candidate, blocking).length)
+  const requests = fixRequests(entries, blocking)
   const fixHunks = []
-  for (const wave of taskWaves(due.map(entry => ({ ...entry, id: entry.task.id, touches: filesOf(entry) })))) {
-    const waveEntries = wave.map(planned => due.find(entry => entry.task.id === planned.id))
-    fixHunks.push(...(waveEntries.length === 1 ? await fixInPlace(waveEntries[0], blocking, round) : await fixParallelWave(waveEntries, blocking, round)))
+  for (const wave of taskWaves(requests.map(request => ({ id: request.entry.task.id, title: request.entry.task.title, touches: filesOf(request.entry) })))) {
+    const waveRequests = wave.map(planned => requests.find(request => request.entry.task.id === planned.id))
+    fixHunks.push(...(waveRequests.length === 1 ? await fixInPlace(waveRequests[0], round) : await fixParallelWave(waveRequests, round)))
   }
   return fixHunks
 }
@@ -420,6 +454,7 @@ const entryOf = (task, implemented) => ({
   hunks: implemented?.hunks ?? [],
   evidence: implemented?.evidence ?? 'implementer returned nothing',
   branch: implemented?.branch ?? '',
+  handoff: implemented?.handoff ?? '',
 })
 
 const taskResult = (entry, outcome) => {
@@ -526,7 +561,7 @@ if (blockedEntries.length) {
 phase('Review')
 const reviewed = entries.filter(entry => entry.changed)
 const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
-const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds }
+const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
 if (opensPullRequest()) {

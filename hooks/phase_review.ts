@@ -125,3 +125,11 @@ export const tasksToRetry = <E extends { task: { id: string }; changed: boolean 
   entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
 
 export const distinctFindings = (findings: ReviewFinding[]) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
+
+export type Authored = { task: { id: string }; handoff?: string }
+
+export const fixRequests = <E extends Authored>(entries: E[], blocking: ReviewFinding[]) =>
+  entries.flatMap(entry => {
+    const findings = distinctFindings(blocking.filter(finding => finding.task === entry.task.id))
+    return findings.length === 0 ? [] : [{ entry, findings, handoff: entry.handoff ?? '' }]
+  })

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, fixRequests, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -234,4 +234,19 @@ test('a verification-only task or a real change is not blocked', () => {
   expect(isBlocked(CODE_CHANGE)).toBe(false)
   expect(isBlocked({ ...CODE_CHANGE, evidence: 'removed the blocked_users scope' })).toBe(false)
   expect(isBlocked({ ...CODE_CHANGE, evidence: 'the guard spec checks a request is blocked' })).toBe(false)
+})
+
+const authored = (id: string, handoff: string) => ({ task: { id, title: id }, handoff })
+
+test('a blocking finding goes to its own task\'s fixer with that implementer\'s handoff note, once per line', () => {
+  const onThree = { ...SINGLETON_FINDING, task: '3' }
+  const sameLineAgain = { ...onThree, reviewer: 'reviewer' }
+  const three = authored('3', 'kept the proxy; run bundle exec rspec spec/shop/backfill')
+  const seventeen = authored('17', 'month helper lives in month_bucket.rb')
+  expect(fixRequests([three, seventeen], [onThree, sameLineAgain])).toEqual([{ entry: three, findings: [onThree], handoff: three.handoff }])
+})
+
+test('a task whose implementer left no handoff note still gets its fix, with an empty note', () => {
+  const entry = { task: { id: '3', title: '3' } }
+  expect(fixRequests([entry], [{ ...SINGLETON_FINDING, task: '3' }])[0]?.handoff).toBe('')
 })
