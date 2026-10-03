@@ -534,11 +534,12 @@ const heldForMerge = JSON.stringify({
   pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } },
 })
 
-const prWorld = (on: On, prState: string) => {
+const prWorld = (on: On, prState: string, seen = { sent: [] as string[], ghCalls: 0 }) => {
   const disk = new Map<string, string>([['.claude/ouroboros.json', CONFIG], ['.claude/ouroboros/state.json', heldForMerge], ['/repo/docs/drafts/plans/m1.md', PLAN]])
   const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
   mock.env(on, { HOME: '/home' })
   on('process.run', (_, e) => {
+    if (e.argv[0] === 'gh') seen.ghCalls++
     const stdout = e.argv[0] === 'gh' ? `${prState}\n` : e.argv.some(arg => arg.startsWith('--grep=')) ? '' : '/repo/.git\n'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -549,7 +550,10 @@ const prWorld = (on: On, prState: string) => {
     return { value: undefined }
   })
   on('session.id', () => ({ value: 'main-session' }))
-  on('session.send', () => ({ isDelivered: true as const }))
+  on('session.send', (_, e) => {
+    seen.sent.push(e.text)
+    return { isDelivered: true as const }
+  })
   return disk
 }
 
@@ -570,6 +574,32 @@ test('/ouroboros resume after the merge starts the held phase on a fresh branch'
   expect(resumed.text).toContain('"fresh_branch":"milestone/m1-p1"')
   expect(resumed.text).toContain('"merge_policy":"ask"')
   expect(stateOn(disk).awaiting_merge).toBeUndefined()
+})
+
+test('the conductor notices a merged phase PR on its own, at most once every five minutes, and starts the held phase', async ($, on) => {
+  const sent: string[] = []
+  const disk = prWorld(on, 'MERGED', { sent, ghCalls: 0 })
+  on('prompt.context', (_, e) => ({ blocks: e.blocks }))
+  mock.clock(on, { now: Date.UTC(2026, 9, 3, 12) })
+
+  const context = await $.prompt.context({ blocks: [] })
+
+  expect(stateOn(disk).awaiting_merge).toBeUndefined()
+  expect(sent.join('\n')).toContain('"fresh_branch":"milestone/m1-p1"')
+  expect(context.blocks.map(block => block.text).join('\n')).toContain('https://github.com/o/r/pull/841 merged')
+})
+
+test('an open phase PR is checked again only after five minutes', async ($, on) => {
+  const seen = { sent: [], ghCalls: 0 }
+  const disk = prWorld(on, 'OPEN', seen)
+  on('prompt.context', (_, e) => ({ blocks: e.blocks }))
+  mock.clock(on, { now: Date.UTC(2026, 9, 3, 12) })
+
+  await $.prompt.context({ blocks: [] })
+  await $.prompt.context({ blocks: [] })
+
+  expect(seen.ghCalls).toBe(1)
+  expect(stateOn(disk)).toMatchObject({ awaiting_merge: { phase: 'P0' }, merge_checked_at: Date.UTC(2026, 9, 3, 12) })
 })
 
 test('a merge or rebase in the main session is refused while a workflow writes to the worktree', async ($, on) => {

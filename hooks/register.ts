@@ -318,13 +318,31 @@ async function releasedFromMerge($: EngineInterface, state: LoopState): Promise<
   return mergeAccepted(state, (await readConfig($)).branch_prefix ?? 'milestone/')
 }
 
+async function continueLoop($: EngineInterface, state: LoopState) {
+  const reconciled = reconcilePending(state, await loopEvidence($, state))
+  return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
+}
+
 async function resumeLoop($: EngineInterface, state: LoopState) {
   await assertPlanReady($)
   const released = await releasedFromMerge($, state)
   if (typeof released === 'string') return released
-  const resumed = { ...released, paused: false }
-  const reconciled = reconcilePending(resumed, await loopEvidence($, resumed))
-  return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
+  return continueLoop($, { ...released, paused: false })
+}
+
+const MERGE_CHECK_INTERVAL_MS = 5 * 60 * 1000
+
+async function noticedMerge($: EngineInterface, state: LoopState) {
+  const waiting = state.awaiting_merge
+  if (waiting === undefined || state.paused || state.run !== undefined) return undefined
+  const now = await $.clock.now()
+  if (now - (state.merge_checked_at ?? 0) < MERGE_CHECK_INTERVAL_MS) return undefined
+  const released = await releasedFromMerge($, state)
+  if (typeof released === 'string') {
+    await writeLoopState($, { ...state, merge_checked_at: now })
+    return undefined
+  }
+  return `${waiting.pr_url} merged; ${await continueLoop($, released)}`
 }
 
 const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
@@ -761,7 +779,9 @@ export const register: Register = on => {
 
   on('prompt.context', async ($, e, next) => {
     if (!(await $.fs.exists(STATE_PATH))) return next(e)
-    return next({ ...e, blocks: [...e.blocks, { name: 'ouroboros', text: loopHeader(await readLoopState($)) }] })
+    const merged = await noticedMerge($, await readLoopState($)).catch(loudly)
+    const header = loopHeader(await readLoopState($))
+    return next({ ...e, blocks: [...e.blocks, { name: 'ouroboros', text: merged === undefined ? header : `${header}\n${merged}` }] })
   })
 
   on('skill.prompt', async ($, e, next) => {
