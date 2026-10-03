@@ -11,4 +11,4 @@ For each open incident in the plugin's `skills/*/incidents.md` and `agents/incid
 4. run it again; it must pass;
 5. mark the incident `fixed` with the eval path.
 A skill with incidents in two consecutive retros is split or rewritten, not patched.
-Plugin skill or agent changes are committed in the plugin repo (`git -C ~/code/ouroboros`, subject `retro(<project> PN): …`) and pushed; project skill changes are committed on the current milestone branch with subject `retro(PN): …`.
+Plugin skill or agent changes are committed in the plugin's own checkout (the directory holding this plugin's `.claude-plugin/plugin.json`) with subject `retro(<project> PN): …`; when that directory is not a git checkout you can push to, write the change as a patch under `.claude/ouroboros/plugin-patches/` and report it. Project skill changes are committed on the current milestone branch with subject `retro(PN): …`.

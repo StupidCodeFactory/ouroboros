@@ -11,4 +11,21 @@ A Claude Code plugin that runs a disciplined, self-improving development loop. E
 
 Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
 
-Status: under construction, first used on a price-feed ingestion refactor.
+Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
+
+## Install
+
+On any machine, add the marketplace and install:
+
+```bash
+claude plugin marketplace add StupidCodeFactory/ouroboros
+claude plugin install ouroboros@ouroboros
+```
+
+The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `env` of `~/.claude/settings.json`. To develop the plugin, point `CLAUDE_CODE_PLUGIN_DIRS` at a checkout instead of installing it; never do both, or every hook runs twice.
+
+## Project setup
+
+Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint commands, lint baseline, lane skills), each agent's eager skills, `adr_dir` and `drafts_dir`. Put language and domain rules in the project's own `.claude/skills/`; the plugin's skills stay project-agnostic.
+
+Status: under construction.

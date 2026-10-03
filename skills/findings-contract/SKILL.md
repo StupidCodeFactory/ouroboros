@@ -7,7 +7,7 @@ description: Load when reviewing or auditing; the fenced findings JSON block eve
 End every review or audit with one fenced JSON block tagged `findings`:
 
 ```findings
-{"findings": [{"file": "src/x.rb", "line": 12, "summary": "…", "root_cause": "code-bug|skill-gap|skill-misread|skill-misuse|agent-behaviour", "skill": "<skill-name>", "agent": "implementer:<lane>"}]}
+{"findings": [{"file": "src/orders/sync.rb", "line": 12, "summary": "…", "root_cause": "code-bug|skill-gap|skill-misread|skill-misuse|agent-behaviour", "skill": "<skill-name>", "agent": "implementer:<lane>"}]}
 ```
 
 - `file` and `line` point at the code; `summary` is one sentence a fix can act on.
@@ -18,10 +18,10 @@ End every review or audit with one fenced JSON block tagged `findings`:
 
 | root_cause | Meaning | Example |
 |---|---|---|
-| `code-bug` | the code is wrong and no skill or agent definition caused it | an off-by-one in a page window end; the skill never discussed window ends |
+| `code-bug` | the code is wrong and no skill or agent definition caused it | an off-by-one in a pagination window; no skill discusses window ends |
 | `skill-gap` | no skill covers the situation the agent faced | the agent invented a dedup key because no skill names one |
-| `skill-misread` | the skill covers it clearly and the agent read it wrong | the skill says "requeue at slot time, never sleep" and the agent slept |
-| `skill-misuse` | the agent read the skill correctly and applied it where it does not apply | the agent applied the fiber-spec `:no_transaction` rule to a plain model spec |
+| `skill-misread` | the skill covers it clearly and the agent read it wrong | the skill says "reschedule, never sleep" and the agent slept |
+| `skill-misuse` | the agent read the skill correctly and applied it where it does not apply | the agent applied a concurrency-test rule to a plain unit test |
 | `agent-behaviour` | the agent definition, not a skill, produced the fault | the implementer merged a PR although its definition forbids merging |
 
 Hooks append `skill-gap`, `skill-misread` and `skill-misuse` findings to the named skill's `incidents.md` and `agent-behaviour` findings to the agent's incidents, status `open`. `code-bug` findings go back to the implementer.

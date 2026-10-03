@@ -5,8 +5,8 @@ description: Load before writing or reviewing any code in a phase; the style rul
 # Code style
 
 - Small functions with names that explain them; no comments.
-- Variable names say what they hold, Rails-style: plural collections (`candles`, `heal_units`), singular items (`candle_page`, `donor_venue`), `_id`, `_ms` for epoch milliseconds, `_at` for times, `?` predicates in Ruby, `is_`/`has_` in Python.
+- Variable names say what they hold: plural collections (`orders`, `pending_jobs`), singular items (`order`, `retry_job`), `_id` for identifiers, `_ms` for epoch milliseconds, `_at` for times, and the language's predicate idiom (`?` in Ruby, `is_`/`has_` in Python, `is`/`has` in TypeScript).
 - Early returns and guard clauses; no nested if/else; no `else` after `return`.
 - Extract shared code on the second real copy; never abstract for code that does not exist yet. A design pattern is used only when it removes code or branches.
-- Ruby: `Style/GuardClause`, `Metrics/BlockNesting` max 2, `Style/IfInsideElse`, tightened `Metrics/MethodLength`, `Metrics/AbcSize`, `Metrics/CyclomaticComplexity`. New code adds zero offenses; a ratchet spec fails if the lint baseline (`lint_baseline` in the lane's `.claude/ouroboros.json` entry) grows.
-- Python: ruff `SIM102`, `RET505`, `PLR0912`, `PLR0915`.
+- The lane's `lint` command from `.claude/ouroboros.json` enforces these rules mechanically. New code adds zero offenses; the count never exceeds the lane's `lint_baseline` and only goes down.
+- Language-specific rules (linter cops, test idioms) live in the project's lane skills, never here.
