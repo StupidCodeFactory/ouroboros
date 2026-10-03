@@ -15,7 +15,7 @@ import { reconcilePending } from './conductor/reconcile'
 import { adoptRun, positionLine, setPosition } from './conductor/repair'
 import type { Repair } from './conductor/repair'
 import type { Evidence } from './conductor/reconcile'
-import { mergeAccepted, nextAction } from './conductor/transitions'
+import { freshBranchName, mergeAccepted, nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
 import { isProcessIncident, parseFindings, resultIncidents } from './findings'
 import type { Finding } from './findings'
@@ -360,6 +360,12 @@ async function resolveDrafts($: EngineInterface, milestone: string, parsed: Kick
   return discoverDrafts(await draftFiles($, draftsRoot), milestone, draftsDir)
 }
 
+async function freshStart($: EngineInterface, state: LoopState) {
+  const config = await readConfig($)
+  if ((config.merge_policy ?? 'ask') !== 'ask') return {}
+  return { fresh_branch: freshBranchName(config.branch_prefix ?? 'milestone/', state.milestone, state.phases[0] ?? 'P0') }
+}
+
 async function kickoff($: EngineInterface, args: string) {
   const parsed = kickoffArgs(args)
   if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [goal]'
@@ -369,9 +375,11 @@ async function kickoff($: EngineInterface, args: string) {
   const { spec, plan } = discovery.drafts
   const planPath = await draftsPath($, plan)
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
-  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan } }
-  assertUniqueTaskIds(await $.fs.read(planPath))
-  const state = { ...kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath)), pending: launch }
+  const planText = await $.fs.read(planPath)
+  assertUniqueTaskIds(planText)
+  const fresh = kickoffState(parsed.milestone, discovery.drafts, planText)
+  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan, ...(await freshStart($, fresh)) } }
+  const state = { ...fresh, pending: launch }
   const reconciled = reconcilePending(state, await loopEvidence($, state))
   return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
 }

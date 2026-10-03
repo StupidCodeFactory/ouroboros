@@ -49,9 +49,17 @@ test('/ouroboros kickoff stores the drafts and hands the milestone-kickoff launc
 
   const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md ship the loop')
 
-  const args = { milestone: 'M1', goal: 'ship the loop', spec: 'specs/m1.md', plan: 'plans/m1.md' }
+  const args = { milestone: 'M1', goal: 'ship the loop', spec: 'specs/m1.md', plan: 'plans/m1.md', fresh_branch: 'milestone/m1-p0' }
   expect(answered.text).toBe(`spec: specs/m1.md\nplan: plans/m1.md\nlaunch now: Workflow name=milestone-kickoff args=${JSON.stringify(args)} (or later with /ouroboros resume)`)
   expect(stateOn(disk)).toMatchObject({ milestone: 'M1', phases: ['P0', 'P1'], status: 'kickoff', drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, pending: { workflow: 'milestone-kickoff', args } })
+})
+
+test('/ouroboros kickoff under merge_policy architect stays on the current branch', async ($, on) => {
+  worldBeneath(on, { '.claude/ouroboros.json': JSON.stringify({ ...JSON.parse(CONFIG), merge_policy: 'architect' }), '/repo/docs/drafts/plans/m1.md': PLAN })
+
+  const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect(answered.text).not.toContain('fresh_branch')
 })
 
 test('/ouroboros kickoff with only a milestone discovers the plan and its spec under drafts_dir', async ($, on) => {

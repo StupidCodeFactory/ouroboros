@@ -124,7 +124,7 @@ const heldForMerge = (before: LoopState, action: Action): Action => {
   }
 }
 
-const freshBranchName = (prefix: string, milestone: string, phase: string) => `${prefix}${milestone}-${phase}`.toLowerCase()
+export const freshBranchName = (prefix: string, milestone: string, phase: string) => `${prefix}${milestone}-${phase}`.toLowerCase()
 
 export const mergeAccepted = (state: LoopState, branchPrefix: string): LoopState => {
   const { awaiting_merge: _merged, merge_checked_at: _checked, ...released } = state

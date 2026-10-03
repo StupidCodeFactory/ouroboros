@@ -1,7 +1,7 @@
 export const meta = {
   name: 'milestone-kickoff',
-  description: 'Milestone kickoff: architect brief and decisions, then at once the planner appends the phase-tagged tasks and the auditor writes the checks red',
-  phases: [{ title: 'Brief' }, { title: 'Plan' }, { title: 'Checks' }],
+  description: 'Milestone kickoff: a fresh branch from the default branch when asked, architect brief and decisions, then at once the planner appends the phase-tagged tasks and the auditor writes the checks red',
+  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Plan' }, { title: 'Checks' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -62,6 +62,12 @@ const PLAN_SCHEMA = {
   required: ['phases', 'tasks_added', 'tasks'],
 }
 
+const BRANCH_SCHEMA = {
+  type: 'object',
+  properties: { branch: { type: 'string' }, base: { type: 'string' } },
+  required: ['branch', 'base'],
+}
+
 const CHECKS_SCHEMA = {
   type: 'object',
   properties: {
@@ -113,6 +119,22 @@ const checksPrompt = brief =>
   TEST_NAMING +
   'Return the check names and whether they are all red. ' +
   PROCESS_FINDINGS_RULE
+
+const freshBranchPrompt = () =>
+  `Milestone ${args.milestone} starts on a fresh branch. Run \`git fetch origin\`, then create and switch to \`${args.fresh_branch}\` from the default branch's origin tip. ` +
+  'Leave uncommitted draft files where they are. Never merge or rebase another branch. Return the `branch` you are on and its `base` commit.'
+
+if (args.fresh_branch) {
+  phase('Branch')
+  const branched = await agent(freshBranchPrompt(), {
+    agentType: ouroborosAgent('implementer'),
+    schema: BRANCH_SCHEMA,
+    phase: 'Branch',
+    model: 'haiku',
+    effort: 'low',
+  })
+  if (!branched || branched.branch !== args.fresh_branch) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: `fresh branch ${args.fresh_branch} not created` }
+}
 
 phase('Brief')
 const briefed = await agent(briefPrompt(), {
