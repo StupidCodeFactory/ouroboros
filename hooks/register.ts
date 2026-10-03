@@ -11,6 +11,8 @@ import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workfl
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
+import { reconcilePending } from './conductor/reconcile'
+import type { Evidence } from './conductor/reconcile'
 import { nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
@@ -217,15 +219,48 @@ async function settle($: EngineInterface, action: Action): Promise<{ state: Loop
   return { state: performed.state, note: [action.notify, performed.note].filter(Boolean).join('; ') || undefined }
 }
 
+const isAbsolutePath = (path: string) => path.startsWith('/')
+
+async function existsInProject($: EngineInterface, path: string) {
+  return $.fs.exists(isAbsolutePath(path) ? path : await projectPath($, path))
+}
+
+async function briefOnDisk($: EngineInterface, state: LoopState) {
+  if (state.brief_dir !== undefined && (await existsInProject($, `${state.brief_dir}/common.md`))) return state.brief_dir
+  const candidates = [state.brief_path, `${BRIEFS_DIR}/${state.milestone}.md`].filter((path): path is string => path !== undefined)
+  for (const candidate of candidates) if (await existsInProject($, candidate)) return candidate
+  return undefined
+}
+
+async function hasPhaseCommit($: EngineInterface, phase: string) {
+  const { stdout } = await $.process.run(['git', 'log', '-1', `--grep=^phase(${phase}):`, '--format=%h'])
+  return stdout.trim() !== ''
+}
+
+async function committedPhases($: EngineInterface, phases: string[]) {
+  const committed: string[] = []
+  for (const phase of phases) if (await hasPhaseCommit($, phase)) committed.push(phase)
+  return committed
+}
+
+async function loopEvidence($: EngineInterface, state: LoopState): Promise<Evidence> {
+  return { briefPath: await briefOnDisk($, state), committedPhases: await committedPhases($, state.phases), planText: await activePlanText($) }
+}
+
+async function offerPending($: EngineInterface, state: LoopState) {
+  if (state.pending === undefined) {
+    await writeLoopState($, state)
+    return 'nothing queued'
+  }
+  const settled = await settle($, { state: { ...state, pending: undefined }, launch: state.pending })
+  await deliverPendingLaunch($, settled.state)
+  return settled.note ?? 'launched'
+}
+
 async function resumeLoop($: EngineInterface, state: LoopState) {
   const resumed = { ...state, paused: false }
-  if (resumed.pending === undefined) {
-    await writeLoopState($, resumed)
-    return 'resumed: nothing queued'
-  }
-  const settled = await settle($, { state: resumed, launch: resumed.pending })
-  await deliverPendingLaunch($, settled.state)
-  return settled.note ?? 'resumed'
+  const reconciled = reconcilePending(resumed, await loopEvidence($, resumed))
+  return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
 }
 
 const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
@@ -252,11 +287,10 @@ async function kickoff($: EngineInterface, args: string) {
   const { spec, plan } = discovery.drafts
   const planPath = await draftsPath($, plan)
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
-  const state = kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath))
   const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan } }
-  const settled = await settle($, { state, launch })
-  await deliverPendingLaunch($, settled.state)
-  return [`spec: ${spec}`, `plan: ${plan}`, settled.note ?? 'kickoff started'].join('\n')
+  const state = { ...kickoffState(parsed.milestone, discovery.drafts, await $.fs.read(planPath)), pending: launch }
+  const reconciled = reconcilePending(state, await loopEvidence($, state))
+  return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
 }
 
 async function runConductorCommand($: EngineInterface, args: string) {

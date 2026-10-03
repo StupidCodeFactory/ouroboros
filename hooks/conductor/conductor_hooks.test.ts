@@ -336,13 +336,50 @@ test('status, pause, resume and escalations answer from state.json', async ($, o
   expect(spawned).toEqual([])
 
   const resumed = await run($, 'resume')
-  expect(resumed.text).toBe('resumed')
+  expect(resumed.text).toBe('resumed: launched')
   expect(spawned).toHaveLength(1)
   expect(stateOn(disk)).toMatchObject({ paused: false, run: { workflow: 'retro' } })
 
   const woken = await $.session.receive({ origin: NOTIFICATION, text: 'retro done, fixed 0' })
   expect(woken.text).toContain('Workflow name=phase')
   expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1', pending: { workflow: 'phase', args: { phase: 'P1' } } })
+})
+
+test('/ouroboros resume drops a kickoff and a phase that already ran and offers the first open phase', async ($, on) => {
+  const plan = ['### Task 2: Verify dashboard holes (P0)', '- [x] Step 1: verify', '### Task 5: New event messages (P1)', '- [ ] Step 1: failing golden spec'].join('\n')
+  const stuck = JSON.stringify({
+    milestone: 'M1', phases: ['P0', 'P1'], current: null, status: 'kickoff', escalations: [], results: {},
+    drafts: { spec: 'specs/2026-10-03-unified-ingestion-loop-design.md', plan: 'plans/m1.md' },
+    pending: { workflow: 'milestone-kickoff', args: { milestone: 'M1', goal: 'build the unified ingestion loop foundations' } },
+  })
+  const disk = new Map<string, string>([
+    ['.claude/ouroboros.json', CONFIG],
+    ['.claude/ouroboros/state.json', stuck],
+    ['/repo/docs/drafts/plans/m1.md', plan],
+    ['/project/.claude/ouroboros/briefs/M1.md', '# M1 brief'],
+  ])
+  const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
+  mock.env(on, { HOME: '/home' })
+  on('process.run', (_, e) => {
+    const argv = e.argv.join(' ')
+    const stdout = argv.includes('--show-toplevel') ? '/project\n' : argv.includes('--grep=^phase(P0):') ? '4bdf974\n' : argv.includes('--git-common-dir') ? '/repo/.git\n' : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    disk.set(e.path.includes('.claude/') ? e.path.slice(e.path.indexOf('.claude/')) : e.path, e.text)
+    return { value: undefined }
+  })
+  on('session.id', () => ({ value: 'main-session' }))
+  on('session.send', () => ({ isDelivered: true as const }))
+
+  const resumed = await run($, 'resume')
+
+  expect(resumed.text).toContain('dropped milestone-kickoff: its brief exists at .claude/ouroboros/briefs/M1.md and every plan phase (P0, P1) already carries tasks')
+  expect(resumed.text).toContain('dropped phase P0: a phase(P0) commit is on the branch and none of its plan boxes is open')
+  expect(resumed.text).toContain('Workflow name=phase')
+  expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1', brief_path: '.claude/ouroboros/briefs/M1.md', pending: { workflow: 'phase', args: { phase: 'P1' } } })
 })
 
 test('the loop header rides on the prompt context', async ($, on) => {

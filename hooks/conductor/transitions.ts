@@ -29,9 +29,9 @@ const phaseArgs = (state: LoopState, phase: string, planText: string | undefined
   return { ...base, tasks: phaseTasks(planText, phase).map(task => withTouches(task, state.touches)) }
 }
 
-const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined): Launch => ({ workflow: 'phase', args: phaseArgs(state, phase, planText) })
+export const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined): Launch => ({ workflow: 'phase', args: phaseArgs(state, phase, planText) })
 
-const exitLaunch = (state: LoopState): Launch => ({ workflow: 'milestone-exit', args: { milestone: state.milestone } })
+export const exitLaunch = (state: LoopState): Launch => ({ workflow: 'milestone-exit', args: { milestone: state.milestone } })
 
 const successorOf = (phases: string[], current: string | null) => phases[phases.indexOf(current ?? '') + 1]
 
