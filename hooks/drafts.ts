@@ -71,3 +71,11 @@ export const firstUncheckedBox = (planText: string, phase: string): UncheckedBox
   const lines = planText.split('\n')
   return inPhase(headingsOf(lines), phase).flatMap(heading => openBoxesIn(lines, heading))[0] ?? null
 }
+
+const phaseNumber = (phase: string) => Number(phase.slice(1))
+
+export const planPhases = (planText: string): string[] => {
+  const tagged = [...new Set(headingsOf(planText.split('\n')).flatMap(heading => heading.phase ?? []))]
+  if (tagged.length === 0) return ['P0']
+  return tagged.sort((left, right) => phaseNumber(left) - phaseNumber(right))
+}

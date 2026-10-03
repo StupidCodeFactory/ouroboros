@@ -7,7 +7,7 @@ A Claude Code plugin that runs a disciplined, self-improving development loop. E
 - **Workflows** (`workflows/`): `milestone-kickoff`, `phase`, `milestone-exit`. The main session runs one workflow per phase; each phase implements with outside-in TDD, reviews in parallel (reviewer, architect, auditor), fixes for at most three rounds, then checkpoints.
 - **Agents** (`agents/`): architect, auditor, reviewer, implementer, skill-curator, adr-scribe. Persistent memory lives in each project's `.claude/agent-memory/`.
 - **Skills** (`skills/`): generic process skills that the loop rewrites after every phase when an agent misreads or misuses them, each change proven by an eval.
-- **Hooks** (`hooks/`): incident capture, retro gate, agent rollover, ADR scribe, planning lessons, status line.
+- **Hooks** (`hooks/`): incident capture, retro gate, agent rollover, ADR scribe, planning lessons, status line, and the conductor: a state machine in `.claude/ouroboros/state.json` that files every workflow result under `.claude/ouroboros/results/`, starts the retro, and hands the next `Workflow` launch to the main session as one line. `/ouroboros status | pause | resume | escalations | kickoff <milestone> <spec> <plan> [goal]` answer from that state without the model.
 
 Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
 

@@ -89,7 +89,7 @@ test('/skill-incident is registered at session start and logs an open skill-gap 
     presentation: PRESENTATION,
   })
 
-  expect(registered).toEqual(['skill-incident'])
+  expect(registered).toEqual(['skill-incident', 'ouroboros'])
   expect(answered.text).toBe('logged against code-style')
   expect(files.get('skills/code-style/incidents.md')).toContain('| 2026-10-03 | P2 | user | skill-gap | | used nested ifs |  | open | |')
 })

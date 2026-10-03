@@ -2,6 +2,14 @@ import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
 import { ACCEPT_MILESTONE_ADRS, FOLD_DRAFT_CHANGE, OPEN_PROPOSED_ADRS, adrScribePrompt, isDraftPath, parseDecisions, planDriftRow } from './adr'
 import { GIT_COMMON_DIR, STATE_PATH, activeDraftsOf, checkoutRootOf, draftsPathOf } from './drafts'
+import type { ActiveDrafts } from './drafts'
+import { digestedResult, isOversized } from './conductor/digest'
+import { isLoopNotification, loopEventOf } from './conductor/events'
+import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader } from './conductor/header'
+import { kickoffState, parseState, serializeState } from './conductor/state'
+import type { Launch, LoopState, Run } from './conductor/state'
+import { nextAction } from './conductor/transitions'
+import type { Action } from './conductor/transitions'
 import { isProcessIncident, parseFindings } from './findings'
 import type { Finding } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
@@ -26,6 +34,12 @@ const PLANNING_IDLE = { active: false, ranThisTurn: false }
 const SKILL_INDEX = { plugin: 'ouroboros', key: 'skillIndex' } as const
 const CONFIG_PATH = '.claude/ouroboros.json'
 const SPAWNS_LOG = '.claude/ouroboros/spawns.jsonl'
+const RESULTS_DIR = '.claude/ouroboros/results'
+const OUROBOROS_COMMAND = {
+  name: 'ouroboros',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> <spec> <plan> [goal]',
+  argumentHint: '<subcommand>',
+}
 const SKILL_INCIDENT_COMMAND = {
   name: 'skill-incident',
   description: 'Log a correction against a skill: /skill-incident <skill> <text>',
@@ -134,9 +148,96 @@ async function retroPendingDenial($: EngineInterface) {
   return { deny: `retro pending: ${openIncidents} open incidents` }
 }
 
-async function startRetro($: EngineInterface) {
-  await $.agent.spawn({ subagentType: `${$.plugin.name}:skill-curator`, description: 'retro', prompt: RETRO_PROMPT })
+async function startRetro($: EngineInterface): Promise<Run> {
+  const spawned = await $.agent.spawn({ subagentType: `${$.plugin.name}:skill-curator`, description: 'retro', prompt: RETRO_PROMPT })
   $.ui.toast('retro started')
+  return { id: spawned.agentId ?? 'retro', workflow: 'retro' }
+}
+
+async function readLoopState($: EngineInterface) {
+  return parseState((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
+}
+
+async function writeLoopState($: EngineInterface, state: LoopState) {
+  await $.fs.write(STATE_PATH, serializeState(state))
+}
+
+async function activePlanText($: EngineInterface) {
+  const drafts = await activeDrafts($)
+  if (drafts === null) return undefined
+  const path = await draftsPath($, drafts.plan)
+  return (await $.fs.exists(path)) ? await $.fs.read(path) : undefined
+}
+
+const launchNote = (launch: Launch) => `launch now: Workflow name=${launch.workflow} args=${JSON.stringify(launch.args)} (or later with /ouroboros resume)`
+
+async function perform($: EngineInterface, state: LoopState, launch: Launch): Promise<{ state: LoopState; note?: string }> {
+  if (launch.workflow === 'retro') return { state: { ...state, run: await startRetro($), pending: undefined } }
+  return { state: { ...state, pending: launch, run: undefined }, note: launchNote(launch) }
+}
+
+async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, taskId: string | undefined) {
+  const state = await readLoopState($)
+  if (state.pending === undefined || state.pending.workflow !== name) return
+  await writeLoopState($, { ...state, pending: undefined, run: { id: taskId ?? state.pending.workflow, workflow: state.pending.workflow } })
+}
+
+async function settle($: EngineInterface, action: Action): Promise<{ state: LoopState; note?: string }> {
+  if (action.launch === undefined) {
+    await writeLoopState($, action.state)
+    return { state: action.state, note: action.notify }
+  }
+  const performed = await perform($, action.state, action.launch)
+  await writeLoopState($, performed.state)
+  return { state: performed.state, note: [action.notify, performed.note].filter(Boolean).join('; ') || undefined }
+}
+
+async function resumeLoop($: EngineInterface, state: LoopState) {
+  const resumed = { ...state, paused: false }
+  if (resumed.pending === undefined) {
+    await writeLoopState($, resumed)
+    return 'resumed: nothing queued'
+  }
+  const { note } = await settle($, { state: resumed, launch: resumed.pending })
+  return note ?? 'resumed'
+}
+
+async function kickoff($: EngineInterface, args: string) {
+  const [milestone, spec, plan, ...goal] = args.split(/\s+/).filter(Boolean)
+  if (milestone === undefined || spec === undefined || plan === undefined) return 'usage: /ouroboros kickoff <milestone> <spec> <plan> [goal]'
+  const drafts: ActiveDrafts = { spec, plan }
+  const planPath = await draftsPath($, plan)
+  if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
+  const state = kickoffState(milestone, drafts, await $.fs.read(planPath))
+  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone, goal: goal.join(' '), spec, plan } }
+  const { note } = await settle($, { state, launch })
+  return note ?? 'kickoff started'
+}
+
+async function runConductorCommand($: EngineInterface, args: string) {
+  const { head, rest } = splitFirstWord(args)
+  const state = await readLoopState($)
+  if (head === 'status') return loopHeader(state)
+  if (head === 'escalations') return escalationsText(state)
+  if (head === 'resume') return resumeLoop($, state)
+  if (head === 'kickoff') return kickoff($, rest)
+  if (head !== 'pause') return OUROBOROS_COMMAND.description
+  await writeLoopState($, { ...state, paused: true })
+  return 'paused: results are still recorded, launches are queued until /ouroboros resume'
+}
+
+async function conductLoopResult($: EngineInterface, state: LoopState, run: Run, text: string) {
+  const resultPath = `${RESULTS_DIR}/${run.id}.json`
+  await $.fs.write(resultPath, text)
+  const event = loopEventOf(text, resultPath, run, state.current)
+  return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
+}
+
+async function filedResult<T extends { result?: unknown }>($: EngineInterface, tool: string, toolUseId: string | undefined, answered: T): Promise<T> {
+  if (answered.result === undefined || !isOversized(answered.result)) return answered
+  const path = `${RESULTS_DIR}/${toolUseId ?? 'result'}.json`
+  await $.fs.write(path, JSON.stringify(answered.result))
+  return { ...answered, result: digestedResult(tool, answered.result, path) }
 }
 
 async function askAdrScribe($: EngineInterface, prompt: string) {
@@ -308,11 +409,13 @@ async function spawnFresh($: EngineInterface, agentName: string, prompt: string)
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register(SKILL_INCIDENT_COMMAND)
+    await $.command.register(OUROBOROS_COMMAND)
     await buildSkillIndex($)
     return next(e)
   })
 
   on('agent.spawn', async ($, e, next) => {
+    if (e.subagentType === undefined) return next(e)
     const agent = agentRole(e.subagentType)
     if (!(await $.fs.exists(agentDefinitionPath($, agent)))) return next(e)
     const prepared = await prepareEagerSpawn($, agent, e.prompt)
@@ -327,6 +430,22 @@ export const register: Register = on => {
     await logUserCorrection($, skill, text)
     await showStatus($)
     return { text: `logged against ${skill}` }
+  })
+
+  on('command.run', { command: OUROBOROS_COMMAND.name }, async ($, e) => ({ text: await runConductorCommand($, e.args) }))
+
+  on('session.receive', { origin: { kind: 'task-notification' } }, async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    const state = await readLoopState($)
+    if (state.run === undefined || !isLoopNotification(e.text, state.run)) return next(e)
+    const { note } = await conductLoopResult($, state, state.run, e.text)
+    if (note === undefined) return { consumed: 'ouroboros conductor filed the result' }
+    return next({ ...e, text: note })
+  })
+
+  on('prompt.context', async ($, e, next) => {
+    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    return next({ ...e, blocks: [...e.blocks, { name: 'ouroboros', text: loopHeader(await readLoopState($)) }] })
   })
 
   on('skill.prompt', async ($, e, next) => {
@@ -346,13 +465,13 @@ export const register: Register = on => {
     if (IMPLEMENTER_AGENTS.has(agentType)) return (await retroPendingDenial($)) ?? next(e)
 
     const answered = await next(e)
-    if (!REVIEWING_AGENTS.has(agentType)) return answered
+    if (!REVIEWING_AGENTS.has(agentType)) return filedResult($, 'Agent', e.tool_use_id, answered)
     if (!hasSucceeded(answered)) return answered
 
     await logIncidents($, agentText(answered.result))
     if (agentType === 'architect') await openProposedAdrs($, agentText(answered.result))
     await showStatus($)
-    return answered
+    return filedResult($, 'Agent', e.tool_use_id, answered)
   })
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
@@ -370,8 +489,11 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
-    if (!isPhaseWorkflow(e)) return next(e)
-    return (await retroPendingDenial($)) ?? next(e)
+    const denial = isPhaseWorkflow(e) ? await retroPendingDenial($) : undefined
+    if (denial !== undefined) return denial
+    const launched = await next(e)
+    if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result as { taskId?: string } | undefined)?.taskId)
+    return filedResult($, 'Workflow', e.tool_use_id, launched)
   })
 
   on('tool.call', { tool: 'SendMessage' }, async ($, e, next) => {
@@ -387,13 +509,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('session.compact', ($, e, next) => {
-    if (e.agentId === undefined) return next(e)
-    return next({ ...e, instructions: SUBAGENT_COMPACTION_INSTRUCTIONS })
+  on('session.compact', async ($, e, next) => {
+    if (e.agentId !== undefined) return next({ ...e, instructions: SUBAGENT_COMPACTION_INSTRUCTIONS })
+    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    return next({ ...e, instructions: COMPACT_INSTRUCTIONS })
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const ran = await next(e)
+    const ran = await filedResult($, 'Bash', e.tool_use_id, await next(e))
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
 
     await startRetro($)
