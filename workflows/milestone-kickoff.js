@@ -1,6 +1,6 @@
 export const meta = {
   name: 'milestone-kickoff',
-  description: 'Milestone kickoff: architect brief and decisions, planner appends the phase-tagged tasks, auditor writes the checks red',
+  description: 'Milestone kickoff: architect brief and decisions, then at once the planner appends the phase-tagged tasks and the auditor writes the checks red',
   phases: [{ title: 'Brief' }, { title: 'Plan' }, { title: 'Checks' }],
 }
 
@@ -123,21 +123,22 @@ const briefed = await agent(briefPrompt(), {
 })
 if (!briefed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
 
-phase('Plan')
-const planned = await agent(planPrompt(briefText(briefed.brief)), {
-  agentType: ouroborosAgent('architect'),
-  schema: PLAN_SCHEMA,
-  phase: 'Plan',
-  effort: stageEffort(args.effort, 'planner'),
-})
-
-phase('Checks')
-const audited = await agent(checksPrompt(briefText(briefed.brief)), {
-  agentType: ouroborosAgent('auditor'),
-  schema: CHECKS_SCHEMA,
-  phase: 'Checks',
-  effort: stageEffort(args.effort, 'audit'),
-})
+const [planned, audited] = await parallel([
+  () =>
+    agent(planPrompt(briefText(briefed.brief)), {
+      agentType: ouroborosAgent('architect'),
+      schema: PLAN_SCHEMA,
+      phase: 'Plan',
+      effort: stageEffort(args.effort, 'planner'),
+    }),
+  () =>
+    agent(checksPrompt(briefText(briefed.brief)), {
+      agentType: ouroborosAgent('auditor'),
+      schema: CHECKS_SCHEMA,
+      phase: 'Checks',
+      effort: stageEffort(args.effort, 'audit'),
+    }),
+])
 
 const plannedSlices = planned ? planned.tasks : []
 
