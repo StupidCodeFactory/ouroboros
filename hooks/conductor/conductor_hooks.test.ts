@@ -290,12 +290,58 @@ test('the loop header rides on the prompt context', async ($, on) => {
   expect(blocks[1]?.text.split('\n')).toHaveLength(3)
 })
 
-test('an oversized Bash result is filed and digested', async ($, on) => {
+test('main-session Bash output passes through whole, however long', async ($, on) => {
   const disk = worldBeneath(on, {})
-  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: 'x'.repeat(5000), stderr: '', interrupted: false } }))
+  const stdout = 'x'.repeat(5000)
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout, stderr: '', interrupted: false } }))
 
   const answered = await $.tool.call({ tool: 'Bash', command: 'ls', tool_use_id: 'use-9' })
 
-  expect((answered.result as { stdout: string }).stdout).toContain('.claude/ouroboros/results/use-9.json')
-  expect(disk.get('.claude/ouroboros/results/use-9.json')).toContain('xxxx')
+  expect((answered.result as { stdout: string }).stdout).toBe(stdout)
+  expect(disk.has('.claude/ouroboros/results/use-9.json')).toBe(false)
+})
+
+const longAgentResult = (text: string) => ({
+  agentId: 'agent-1',
+  content: [{ type: 'text' as const, text }],
+  totalToolUseCount: 0,
+  totalDurationMs: 1,
+  totalTokens: 1,
+  usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, server_tool_use: null, service_tier: null, cache_creation: null },
+})
+
+const rootedWorld = (on: On) => {
+  const written = new Map<string, string>()
+  on('process.run', (_, e) => {
+    const stdout = e.argv.includes('--show-toplevel') ? '/project\n' : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: false }))
+  on('fs.read', () => ({ value: '' }))
+  on('fs.write', (_, e) => {
+    written.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('ui.status', () => ({ value: undefined }))
+  return written
+}
+
+test('an oversized loop agent result is filed under the project root, whatever the cwd', async ($, on) => {
+  const written = rootedWorld(on)
+  on('tool.call', { tool: 'Agent' }, () => ({ result: longAgentResult('y'.repeat(5000)) }))
+
+  const answered = await $.tool.call({ tool: 'Agent', description: 'review', prompt: 'review it', subagent_type: 'ouroboros:reviewer', tool_use_id: 'use-7' })
+
+  expect(JSON.stringify(answered.result)).toContain('/project/.claude/ouroboros/results/use-7.json')
+  expect(written.get('/project/.claude/ouroboros/results/use-7.json')).toContain('yyyy')
+})
+
+test('an oversized result from an agent outside the loop passes through whole', async ($, on) => {
+  const written = rootedWorld(on)
+  on('tool.call', { tool: 'Agent' }, () => ({ result: longAgentResult('z'.repeat(5000)) }))
+
+  const answered = await $.tool.call({ tool: 'Agent', description: 'look', prompt: 'find it', subagent_type: 'Explore', tool_use_id: 'use-8' })
+
+  expect(JSON.stringify(answered.result)).toContain('z'.repeat(5000))
+  expect(written.size).toBe(0)
 })

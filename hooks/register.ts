@@ -47,7 +47,13 @@ const SKILL_INCIDENT_COMMAND = {
   argumentHint: '<skill> <text>',
 }
 
+const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit'])
+
 const agentRole = (subagentType: string) => subagentType.slice(subagentType.lastIndexOf(':') + 1)
+
+const isLoopAgent = ($: EngineInterface, subagentType: string | undefined) => (subagentType ?? '').startsWith(`${$.plugin.name}:`)
+
+const isLoopWorkflow = (name: string | undefined) => LOOP_WORKFLOWS.has(bareName(name ?? ''))
 
 const agentText = (result: unknown) => {
   const content = (result as { content?: Array<{ text?: string }> } | undefined)?.content ?? []
@@ -267,15 +273,24 @@ async function workflowOutputText($: EngineInterface, notificationText: string) 
 async function conductLoopResult($: EngineInterface, state: LoopState, run: Run, text: string) {
   const resultPath = `${RESULTS_DIR}/${run.id}.json`
   const outputText = await workflowOutputText($, text)
-  await $.fs.write(resultPath, outputText ?? text)
+  await $.fs.write(await projectPath($, resultPath), outputText ?? text)
   const fullResult = outputText === undefined ? undefined : workflowResultOf(outputText)
   const event = loopEventOf(text, resultPath, run, state.current, fullResult)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
 }
 
+async function repositoryRoot($: EngineInterface) {
+  const { stdout } = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
+  return stdout.trim() || (await $.session.cwd())
+}
+
+async function projectPath($: EngineInterface, relative: string) {
+  return `${await repositoryRoot($)}/${relative}`
+}
+
 async function filedResult<T extends { result?: unknown }>($: EngineInterface, tool: string, toolUseId: string | undefined, answered: T): Promise<T> {
   if (answered.result === undefined || !isOversized(answered.result)) return answered
-  const path = `${RESULTS_DIR}/${toolUseId ?? 'result'}.json`
+  const path = await projectPath($, `${RESULTS_DIR}/${toolUseId ?? 'result'}.json`)
   await $.fs.write(path, JSON.stringify(answered.result))
   return { ...answered, result: digestedResult(tool, answered.result, path) }
 }
@@ -516,13 +531,13 @@ export const register: Register = on => {
     if (IMPLEMENTER_AGENTS.has(agentType)) return (await retroPendingDenial($)) ?? next(e)
 
     const answered = await next(e)
-    if (!REVIEWING_AGENTS.has(agentType)) return filedResult($, 'Agent', e.tool_use_id, answered)
-    if (!hasSucceeded(answered)) return answered
+    const filed = isLoopAgent($, e.subagent_type) ? await filedResult($, 'Agent', e.tool_use_id, answered) : answered
+    if (!REVIEWING_AGENTS.has(agentType) || !hasSucceeded(answered)) return filed
 
     await logIncidents($, agentText(answered.result))
     if (agentType === 'architect') await openProposedAdrs($, agentText(answered.result))
     await showStatus($)
-    return filedResult($, 'Agent', e.tool_use_id, answered)
+    return filed
   })
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
@@ -544,6 +559,7 @@ export const register: Register = on => {
     if (denial !== undefined) return denial
     const launched = await next(e)
     if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result as { taskId?: string } | undefined)?.taskId)
+    if (!isLoopWorkflow(e.name)) return launched
     return filedResult($, 'Workflow', e.tool_use_id, launched)
   })
 
@@ -567,7 +583,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const ran = await filedResult($, 'Bash', e.tool_use_id, await next(e))
+    const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
 
     await startRetro($)
