@@ -32,6 +32,24 @@ const FINDINGS_SCHEMA = {
   required: ['findings'],
 }
 
+const IMPLEMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    changed: { type: 'boolean' },
+    commits: { type: 'array', items: { type: 'string' } },
+    hunks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { file: { type: 'string' }, start: { type: 'number' }, end: { type: 'number' } },
+        required: ['file', 'start', 'end'],
+      },
+    },
+    evidence: { type: 'string' },
+  },
+  required: ['changed', 'commits', 'hunks', 'evidence'],
+}
+
 const MAX_FIX_ROUNDS = 3
 const REVIEWERS = [
   { agent: 'reviewer', stage: 'review' },
@@ -55,8 +73,14 @@ const planReference = task => (task.line ? `Plan section: the "### Task ${task.i
 const fixInstruction = blocking =>
   blocking.length ? `Fix these blocking findings:\n${JSON.stringify(blocking)}` : 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
 
+const RESULT_INSTRUCTION =
+  '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
+  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file) and `evidence` (commands run and their decisive output).'
+
+const needsReview = implemented => !implemented || implemented.changed !== false
+
 const implementPrompt = (task, blocking) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\nArchitect brief:\n${args.brief}\n${fixInstruction(blocking)}`
+  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\nArchitect brief:\n${args.brief}\n${fixInstruction(blocking)}${RESULT_INSTRUCTION}`
 
 const reviewPrompt = (reviewer, task) =>
   eagerPreamble(`${reviewer}.md`) +
@@ -68,6 +92,7 @@ const implementStage = blocking => (blocking.length ? 'fix' : 'implement')
 const implement = (task, blocking, round) =>
   agent(implementPrompt(task, blocking), {
     agentType: ouroborosAgent('implementer'),
+    schema: IMPLEMENT_SCHEMA,
     phase: 'Implement',
     label: `implement:${task.id}:r${round}`,
     effort: stageEffort(args.effort, implementStage(blocking)),
@@ -91,7 +116,8 @@ const runTask = async task => {
   let blocking = []
   const allFindings = []
   for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
-    await implement(task, blocking, round)
+    const implemented = await implement(task, blocking, round)
+    if (round === 1 && !needsReview(implemented)) return { id: task.id, status: 'verified', rounds: 1, evidence: implemented.evidence, findings: [] }
     const findings = await reviewTask(task)
     allFindings.push(...findings)
     blocking = findings.filter(finding => finding.blocking)
