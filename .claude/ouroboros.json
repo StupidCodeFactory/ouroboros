@@ -1,0 +1,46 @@
+{
+  "lanes": {
+    "docs": {
+      "owned_paths": ["README.md", "assets/**"],
+      "test": "./scripts/pre-push",
+      "lint": "./scripts/guard_no_outside_skills.sh",
+      "lint_baseline": 0
+    }
+  },
+  "agents": {
+    "architect": {
+      "eager_skills": [
+        "ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "ouroboros:findings-contract", "ouroboros:adr-format",
+        "caveman:caveman:ultra", "ponytail:ponytail:ultra",
+        "impeccable:impeccable", "brandkit"
+      ]
+    },
+    "implementer": {
+      "eager_skills": [
+        "ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow",
+        "caveman:caveman:ultra", "ponytail:ponytail:ultra"
+      ],
+      "lanes": { "docs": { "eager_skills": ["impeccable:impeccable", "design-taste-frontend"] } }
+    },
+    "reviewer": {
+      "eager_skills": [
+        "ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:findings-contract",
+        "caveman:caveman:ultra", "ponytail:ponytail:ultra",
+        "impeccable:impeccable"
+      ]
+    },
+    "auditor": {
+      "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:findings-contract", "caveman:caveman:ultra", "ponytail:ponytail:ultra"]
+    },
+    "adr-scribe": {
+      "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:adr-format", "caveman:caveman:ultra", "ponytail:ponytail:ultra"]
+    },
+    "skill-curator": {
+      "eager_skills": ["superpowers:writing-skills", "caveman:caveman:ultra", "ponytail:ponytail:ultra"]
+    }
+  },
+  "planning_skills": ["superpowers:brainstorming", "superpowers:writing-plans"],
+  "eager_skills_max_chars": 130000,
+  "adr_dir": "docs/adr",
+  "drafts_dir": "docs/drafts"
+}
