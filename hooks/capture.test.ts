@@ -47,9 +47,9 @@ test('a reviewer finding lands as an open incident row in the skill log', async 
   await $.tool.call({ tool: 'Agent', description: 'review', prompt: 'review it', subagent_type: 'reviewer' })
 
   const log = files.get(SKILL_LOG) ?? ''
-  expect(log).toContain('| 2026-10-03 | P3 | implementer | skill-misread | | skipped the retry step | : | open | |')
+  expect(log).toContain('| 2026-10-03 | P3 | implementer | skill-misread | | skipped the retry step |  | open | |')
   expect(log).not.toContain('typo')
-  expect(statuses).toEqual(['skills: 1 open'])
+  expect(statuses).toEqual(['skills: 1 open · ADR 1 proposed'])
 })
 
 test('an implementer result is not read for findings', async ($, on) => {

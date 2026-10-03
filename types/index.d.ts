@@ -3,6 +3,7 @@ declare module 'claude-code' {
     ouroboros: {
       openIncidents: number
       retiring: string[]
+      planning: { active: boolean; ranThisTurn: boolean }
     }
   }
 }
