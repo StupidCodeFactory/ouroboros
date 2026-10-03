@@ -63,8 +63,9 @@ const branchName = () => args.branch ?? 'the current branch'
 
 const checksPrompt = () =>
   eagerPreamble('auditor.md') +
-  `Milestone ${args.milestone} exit on ${branchName()}. Run every milestone check and every lane's full test and lint commands from .claude/ouroboros.json. ` +
-  'Return whether all are green and the evidence (commands and their output tails). ' +
+  `Milestone ${args.milestone} exit on ${branchName()}. Run every milestone check. For each lane's full test and lint commands from .claude/ouroboros.json, ` +
+  'take the CI result of the branch head (`gh pr checks` or `gh run list --commit <head sha>`) when CI ran on that commit, and run a suite yourself only when CI did not. ' +
+  'Return whether all are green and the evidence (commands or CI runs and their decisive output). ' +
   PROCESS_FINDINGS_RULE
 
 const pullRequestPrompt = evidence =>
@@ -101,7 +102,8 @@ const opened = await agent(pullRequestPrompt(audited.evidence), {
   agentType: ouroborosAgent('implementer'),
   schema: PR_SCHEMA,
   phase: 'Pull request',
-  effort: stageEffort(args.effort, 'merge'),
+  model: 'haiku',
+  effort: stageEffort(args.effort, 'merge') ?? 'low',
 })
 reports.push(opened)
 if (!opened) return refused(audited.evidence, '', 'pull request not opened')

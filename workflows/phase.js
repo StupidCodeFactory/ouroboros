@@ -214,7 +214,9 @@ const checkpointVerdict = (checkpoint) => {
   return { status, evidence: checkpoint.evidence }
 }
 
-const IMPLEMENT_INSTRUCTION = 'Implement it outside-in, red first; tick each plan box in the commit that verifies it.'
+const IMPLEMENT_INSTRUCTION =
+  'Implement it outside-in, red first; tick each plan box in the commit that verifies it. ' +
+  'While you work run only the tests of the files you change; the full suite runs once at the checkpoint.'
 
 const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of this phase: commit on its branch and never merge.'
 
@@ -258,7 +260,8 @@ const mergeWave = entries =>
     schema: MERGE_SCHEMA,
     phase: 'Implement',
     label: `merge:${entries.map(entry => entry.task.id).join(',')}`,
-    effort: stageEffort(args.effort, 'implement'),
+    model: 'haiku',
+    effort: stageEffort(args.effort, 'merge') ?? 'low',
   })
 
 const NOTHING_MERGED = { merged: [], conflicted: [] }
@@ -398,9 +401,16 @@ const taskResult = (entry, outcome) => {
   return { id: entry.task.id, status: escalated ? 'escalate' : 'done', commits: entry.commits, evidence: entry.evidence, findings }
 }
 
+const touchedLanes = () => [...new Set((args.tasks ?? []).map(laneOf).filter(Boolean))]
+
+const laneScope = () => {
+  const lanes = touchedLanes()
+  return lanes.length ? `of lane${lanes.length > 1 ? 's' : ''} ${lanes.join(', ')} (the lanes this phase touched)` : 'of every lane'
+}
+
 const checkpointPrompt = () =>
   `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
-  `of every lane in .claude/ouroboros.json${args.lane ? ` (at least lane ${args.lane})` : ''}. ` +
+  `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
   'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output).'
 
@@ -427,7 +437,8 @@ const openPullRequest = (summary, evidence) =>
     agentType: ouroborosAgent('implementer'),
     schema: PR_SCHEMA,
     phase: 'Pull request',
-    effort: stageEffort(args.effort, 'merge'),
+    model: 'haiku',
+    effort: stageEffort(args.effort, 'merge') ?? 'low',
   })
 
 const freshBranchPrompt = () =>
@@ -440,7 +451,8 @@ const startFreshBranch = () =>
     agentType: ouroborosAgent('implementer'),
     schema: BRANCH_SCHEMA,
     phase: 'Branch',
-    effort: stageEffort(args.effort, 'checkpoint'),
+    model: 'haiku',
+    effort: stageEffort(args.effort, 'merge') ?? 'low',
   })
 
 const opensPullRequest = () => args.merge_policy !== 'architect'
