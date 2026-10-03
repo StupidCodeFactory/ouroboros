@@ -327,7 +327,7 @@ test('status, pause, resume and escalations answer from state.json', async ($, o
     return { model: 'fable', agentId: 'curator-1' }
   })
 
-  expect((await run($, 'status')).text).toContain('ouroboros M1 · phase P0')
+  expect((await run($, 'status')).text).toContain('ouroboros · M1 · phase\n\nphase  state\n-----  -------\nP0     running\nP1     queued')
   expect((await run($, 'escalations')).text).toBe('no escalations')
   await run($, 'pause')
   const held = await $.session.receive({ origin: NOTIFICATION, text: 'wf-1 {"status":"checkpointed"}' })

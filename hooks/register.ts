@@ -7,7 +7,7 @@ import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
 import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
-import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, workflowCall } from './conductor/header'
+import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workflowCall } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
@@ -262,7 +262,7 @@ async function kickoff($: EngineInterface, args: string) {
 async function runConductorCommand($: EngineInterface, args: string) {
   const { head, rest } = splitFirstWord(args)
   const state = await readLoopState($)
-  if (head === 'status') return loopHeader(state)
+  if (head === 'status') return statusReport(state)
   if (head === 'escalations') return escalationsText(state)
   if (head === 'resume') return resumeLoop($, state)
   if (head === 'kickoff') return kickoff($, rest)
