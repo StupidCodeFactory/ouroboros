@@ -37,6 +37,7 @@ const IMPLEMENT_SCHEMA = {
   type: 'object',
   properties: {
     changed: { type: 'boolean' },
+    blocked: { type: 'boolean' },
     commits: { type: 'array', items: { type: 'string' } },
     hunks: {
       type: 'array',
@@ -49,7 +50,7 @@ const IMPLEMENT_SCHEMA = {
     evidence: { type: 'string' },
     branch: { type: 'string' },
   },
-  required: ['changed', 'commits', 'hunks', 'evidence', 'branch'],
+  required: ['changed', 'blocked', 'commits', 'hunks', 'evidence', 'branch'],
 }
 
 const MERGE_SCHEMA = {
@@ -122,10 +123,15 @@ const COMMIT_RULE =
   '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
 
 const RESULT_INSTRUCTION =
-  '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `commits` (the shas you made), ' +
+  '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `blocked` (true when you could not do the task, e.g. a tool refused or a dependency is missing; name the blocker in `evidence`), `commits` (the shas you made), ' +
   '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output) and `branch` (the branch your commits are on).'
 
 const needsReview = (implemented) => implemented?.changed !== false
+
+const BLOCKED_WORD = /\bBLOCKED\b|\bBLOCKER\b|^\s*Block(?:ed|er)\b/m
+
+const isBlocked = (implemented) =>
+  implemented === null || implemented === undefined || implemented.blocked === true || BLOCKED_WORD.test(implemented.evidence ?? '')
 
 const samePath = (left, right) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
 
@@ -293,6 +299,9 @@ const runParallelWave = async wave => {
   const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
   const retried = []
   for (const entry of tasksToRetry(isolated, merge)) retried.push(await (entry.branch ? rebaseInPlace(entry) : implementInPlace(entry.task)))
+  const blocked = isolated.filter(entry => entry.blocked && !retried.some(retry => retry.task.id === entry.task.id))
+  if (blocked.length) log(`${args.phase}: task ${blocked.map(entry => entry.task.id).join(', ')} blocked in a worktree; running in place one at a time`)
+  for (const entry of blocked) retried.push(await implementInPlace(entry.task))
   return isolated.map(entry => retried.find(retry => retry.task.id === entry.task.id) ?? entry)
 }
 
@@ -359,7 +368,7 @@ const recordFix = (entry, fixed) => {
 
 const fixInPlace = async (entry, blocking, round) => recordFix(entry, await fix(entry, blockingOf(entry, blocking), round, false))
 
-const fixedEntry = (entry, fixed) => ({ task: entry.task, changed: Boolean(fixed) && fixed.changed !== false, branch: (fixed && fixed.branch) || '' })
+const fixedEntry = (entry, fixed) => ({ task: entry.task, changed: isBlocked(fixed) || fixed.changed !== false, branch: (!isBlocked(fixed) && fixed.branch) || '' })
 
 const fixParallelWave = async (wave, blocking, round) => {
   const fixed = await parallel(wave.map(entry => () => fix(entry, blockingOf(entry, blocking), round, true)))
@@ -406,6 +415,7 @@ const NOT_REVIEWED = { blocking: [], findings: [], followUps: [], rounds: 0 }
 const entryOf = (task, implemented) => ({
   task,
   changed: needsReview(implemented),
+  blocked: isBlocked(implemented),
   commits: implemented?.commits ?? [],
   hunks: implemented?.hunks ?? [],
   evidence: implemented?.evidence ?? 'implementer returned nothing',
@@ -413,6 +423,7 @@ const entryOf = (task, implemented) => ({
 })
 
 const taskResult = (entry, outcome) => {
+  if (entry.blocked) return { id: entry.task.id, status: 'escalate', commits: entry.commits, evidence: entry.evidence, findings: [] }
   if (!entry.changed) return { id: entry.task.id, status: 'verified', commits: [], evidence: entry.evidence, findings: [] }
   const escalated = blockingOf(entry, outcome.blocking).length > 0
   const findings = outcome.findings.filter(finding => finding.task === entry.task.id)
@@ -505,6 +516,12 @@ if (!tasks.length) log(`${args.phase}: no tasks passed in args; nothing to imple
 const implementedEntries = []
 for (const wave of taskWaves(tasks)) implementedEntries.push(...(await runWave(wave)))
 const entries = inPlanOrder(implementedEntries, tasks)
+
+const blockedEntries = entries.filter(entry => entry.blocked)
+if (blockedEntries.length) {
+  const unreviewed = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, NOT_REVIEWED)), follow_ups: [], review_rounds: 0 }
+  return { status: 'escalate', ...unreviewed, evidence: '', failing_gate: `blocked: ${blockedEntries.map(entry => `task ${entry.task.id} (${entry.evidence.slice(0, 160)})`).join('; ')}` }
+}
 
 phase('Review')
 const reviewed = entries.filter(entry => entry.changed)

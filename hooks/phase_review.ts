@@ -2,9 +2,14 @@ export type Hunk = { file: string; start: number; end: number }
 export type Reviewer = { agent: string; stage: string }
 export type ReviewFinding = { reviewer?: string; task?: string; file?: string; line?: number; summary: string; blocking: boolean }
 export type TaskDiffs = Record<string, Hunk[]>
-export type Implemented = { changed?: boolean; commits?: string[]; hunks?: Hunk[]; evidence?: string }
+export type Implemented = { changed?: boolean; commits?: string[]; hunks?: Hunk[]; evidence?: string; blocked?: boolean }
 
 export const needsReview = (implemented: Implemented | undefined) => implemented?.changed !== false
+
+export const BLOCKED_WORD = /\bBLOCKED\b|\bBLOCKER\b|^\s*Block(?:ed|er)\b/m
+
+export const isBlocked = (implemented: Implemented | null | undefined) =>
+  implemented === null || implemented === undefined || implemented.blocked === true || BLOCKED_WORD.test(implemented.evidence ?? '')
 
 export const samePath = (left: string, right: string) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
 

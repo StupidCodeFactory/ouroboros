@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -219,4 +219,19 @@ test('tasks owning different lanes share a wave, two tasks of one lane do not', 
   const ruby = (id: string) => ({ id, title: id, touches: ['lib/**', 'spec/**'] })
   const python = { id: 'p', title: 'p', touches: ['services/**'] }
   expect(idsOf(taskWaves([ruby('a'), python, ruby('b')]))).toEqual([['a', 'p'], ['b']])
+})
+
+test('an implementer that could not work is blocked, whatever it says about changes', () => {
+  const refused = { changed: false, commits: [], hunks: [], evidence: 'BLOCKED: every Bash call refused, working-directory isolation context lost' }
+  expect(isBlocked(refused)).toBe(true)
+  expect(isBlocked({ ...VERIFICATION_ONLY, blocked: true })).toBe(true)
+  expect(isBlocked({ ...CODE_CHANGE, evidence: 'Blocker: the test database is down' })).toBe(true)
+  expect(isBlocked(null)).toBe(true)
+})
+
+test('a verification-only task or a real change is not blocked', () => {
+  expect(isBlocked(VERIFICATION_ONLY)).toBe(false)
+  expect(isBlocked(CODE_CHANGE)).toBe(false)
+  expect(isBlocked({ ...CODE_CHANGE, evidence: 'removed the blocked_users scope' })).toBe(false)
+  expect(isBlocked({ ...CODE_CHANGE, evidence: 'the guard spec checks a request is blocked' })).toBe(false)
 })
