@@ -79,6 +79,30 @@ const RESULT_INSTRUCTION =
 
 const needsReview = implemented => !implemented || implemented.changed !== false
 
+const samePath = (left, right) => left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`)
+
+const sameSpot = (left, right) => left.file !== undefined && right.file !== undefined && samePath(left.file, right.file) && left.line === right.line
+
+const isCoveredBy = (finding, kept) => kept.some(keptFinding => sameSpot(finding, keptFinding))
+
+const reviewersOwningEachFinding = (reviewers, blocking) => {
+  const kept = []
+  return reviewers.filter(reviewer => {
+    const fresh = blocking.filter(finding => finding.reviewer === reviewer.agent && !isCoveredBy(finding, kept))
+    kept.push(...fresh)
+    return fresh.length > 0
+  })
+}
+
+const touchesOtherFiles = (fix, blocking) => fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
+
+const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
+  if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
+  if (touchesOtherFiles(fix, previousBlocking)) return reviewers
+  const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
+  return owners.length === 0 ? reviewers : owners
+}
+
 const implementPrompt = (task, blocking) =>
   `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\nArchitect brief:\n${args.brief}\n${fixInstruction(blocking)}${RESULT_INSTRUCTION}`
 
@@ -107,9 +131,11 @@ const review = (reviewer, task) =>
     effort: stageEffort(args.effort, reviewer.stage),
   })
 
-const reviewTask = async task => {
-  const reviews = await parallel(REVIEWERS.map(reviewer => () => review(reviewer, task)))
-  return reviews.filter(Boolean).flatMap(result => result.findings)
+const tagged = (reviewer, result) => (result ? result.findings.map(finding => ({ ...finding, reviewer: reviewer.agent })) : [])
+
+const reviewTask = async (task, reviewers) => {
+  const reviews = await parallel(reviewers.map(reviewer => () => review(reviewer, task)))
+  return reviews.flatMap((result, index) => tagged(reviewers[index], result))
 }
 
 const runTask = async task => {
@@ -118,7 +144,8 @@ const runTask = async task => {
   for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
     const implemented = await implement(task, blocking, round)
     if (round === 1 && !needsReview(implemented)) return { id: task.id, status: 'verified', rounds: 1, evidence: implemented.evidence, findings: [] }
-    const findings = await reviewTask(task)
+    const fix = implemented && implemented.hunks ? implemented.hunks : []
+    const findings = await reviewTask(task, reviewersForRound(round, MAX_FIX_ROUNDS, REVIEWERS, blocking, fix))
     allFindings.push(...findings)
     blocking = findings.filter(finding => finding.blocking)
     if (!blocking.length) return { id: task.id, status: 'done', rounds: round, findings: allFindings }
