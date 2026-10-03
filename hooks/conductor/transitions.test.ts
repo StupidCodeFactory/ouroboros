@@ -41,6 +41,13 @@ test('a phase whose PR the architect left open escalates with the failing gate',
   expect(state.escalations).toEqual([{ kind: 'task-red', phase: 'P0', summary: 'P0: CI red: rspec', result_path: 'r0.json' }])
 })
 
+test('each phase task carries its lane, so one phase run mixes ruby and python tasks', () => {
+  const plan = ['### Task 7: Owners API (P0)', '- [ ] Step 1', '### Task 19: One Python contract test per service (P0)', '- [ ] Step 1'].join('\n')
+  const touched = { ...base, current: null, status: 'kickoff' as const, brief_dir: '/b', touches: { '7': ['lib/price_feed/web/api.rb'], '19': ['services/parquet_writer/tests/test_events_contract.py'] } }
+  const { launch } = nextAction(touched, { type: 'kickoff-done', brief: '' }, plan, { ruby: ['lib/**'], python: ['services/**'] })
+  expect((launch?.args as { tasks: Array<{ id: string; lane?: string }> }).tasks.map(task => [task.id, task.lane])).toEqual([['7', 'ruby'], ['19', 'python']])
+})
+
 test('a checkpointed phase starts the retro', () => {
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('retro')

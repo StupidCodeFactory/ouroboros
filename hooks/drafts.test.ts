@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { activeDraftsOf, checkoutRootOf, draftsPathOf, firstUncheckedBox, phaseTasks } from './drafts'
+import { activeDraftsOf, checkoutRootOf, draftsPathOf, firstUncheckedBox, phaseTasks, planPhases } from './drafts'
 
 const TAGGED_PLAN = [
   '# Plan',
@@ -55,4 +55,13 @@ test('the first unchecked box skips ticked and dropped boxes', () => {
 
 test('a phase with every box ticked has no unchecked box', () => {
   expect(firstUncheckedBox('### Task 1: x (P1)\n- [x] y', 'P1')).toBe(null)
+})
+
+test('a heading tagged with a phase and a lane keeps both', () => {
+  const plan = ['### Task 5: New event messages and golden payloads (P1)', '- [ ] Step 1', '### Task 6: Python decodes the goldens (P1, python)', '- [ ] Step 1'].join('\n')
+  expect(phaseTasks(plan, 'P1')).toEqual([
+    { id: '5', title: 'New event messages and golden payloads', line: 1, unchecked: 1 },
+    { id: '6', title: 'Python decodes the goldens', line: 3, unchecked: 1, lane: 'python' },
+  ])
+  expect(planPhases(plan)).toEqual(['P1'])
 })

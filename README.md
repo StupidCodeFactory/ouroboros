@@ -11,7 +11,7 @@ A Claude Code plugin that runs a disciplined, self-improving development loop. E
 
 Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
 
-Specs and plans are ordinary markdown drafts: `### Task <id>: <title> (PN)` headings and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
+Specs and plans are ordinary markdown drafts: `### Task <id>: <title> (PN)` headings (or `(PN, <lane>)` to pin a task's lane) and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
 
 Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
 
@@ -58,7 +58,7 @@ Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint c
 
 An optional `effort` map sets the reasoning effort per workflow stage; the conductor passes it to every workflow it launches as `args.effort`, and a stage left out inherits the session effort. Stages: `brief`, `implement`, `review`, `architect_review`, `audit`, `fix`, `planner`, `checkpoint`, `merge`; values: `low`, `medium`, `high`, `xhigh`, `max`.
 
-Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief_dir, tasks }` with each task's `touches` from its brief slice (or `brief_path`, or an inline `brief` when no brief file exists; a long brief belongs in a file, never inline) (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
+Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief_dir, tasks }` with each task's `touches` from its brief slice and its `lane` (the heading's lane tag, else the lane whose `owned_paths` own most of its touched files), so one phase mixes lanes and checkpoints once after all of them (or `brief_path`, or an inline `brief` when no brief file exists; a long brief belongs in a file, never inline) (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
 
 ## Runtime state
 

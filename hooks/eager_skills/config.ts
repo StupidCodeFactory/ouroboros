@@ -5,6 +5,7 @@ type AgentConfig = LaneConfig & { lanes?: Record<string, LaneConfig> }
 export type Stage = 'brief' | 'implement' | 'review' | 'architect_review' | 'audit' | 'fix' | 'planner' | 'checkpoint' | 'merge'
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type OuroborosConfig = {
+  lanes?: Record<string, { owned_paths?: string[] }>
   agents?: Record<string, AgentConfig>
   planning_skills?: string[]
   eager_skills_max_chars?: number

@@ -2,6 +2,8 @@ import { firstUncheckedBox, phaseTasks } from '../drafts'
 import type { PhaseTask } from '../drafts'
 import { touchesByTask } from './briefs'
 import type { BriefSlices } from './briefs'
+import { taskLane } from './lanes'
+import type { LaneOwnership } from './lanes'
 import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
@@ -23,13 +25,21 @@ const withTouches = (task: PhaseTask, touches: LoopState['touches']) => {
   return files === undefined ? task : { ...task, touches: files }
 }
 
-const phaseArgs = (state: LoopState, phase: string, planText: string | undefined) => {
-  const base = { milestone: state.milestone, phase, ...briefArg(state) }
-  if (planText === undefined) return base
-  return { ...base, tasks: phaseTasks(planText, phase).map(task => withTouches(task, state.touches)) }
+const withLane = <T extends PhaseTask & { touches?: string[] }>(task: T, lanes: LaneOwnership) => {
+  const lane = taskLane(task, lanes)
+  return lane === undefined ? task : { ...task, lane }
 }
 
-export const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined): Launch => ({ workflow: 'phase', args: phaseArgs(state, phase, planText) })
+const phaseArgs = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership) => {
+  const base = { milestone: state.milestone, phase, ...briefArg(state) }
+  if (planText === undefined) return base
+  return { ...base, tasks: phaseTasks(planText, phase).map(task => withLane(withTouches(task, state.touches), lanes)) }
+}
+
+export const phaseLaunch = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership = {}): Launch => ({
+  workflow: 'phase',
+  args: phaseArgs(state, phase, planText, lanes),
+})
 
 export const exitLaunch = (state: LoopState): Launch => ({ workflow: 'milestone-exit', args: { milestone: state.milestone } })
 
@@ -45,9 +55,9 @@ const escalated = (state: LoopState, escalation: Escalation, notify: string): Ac
   notify,
 })
 
-const launchPhase = (state: LoopState, phase: string, planText: string | undefined): Action => ({
+const launchPhase = (state: LoopState, phase: string, planText: string | undefined, lanes: LaneOwnership): Action => ({
   state: { ...state, status: 'phase', current: phase },
-  launch: phaseLaunch(state, phase, planText),
+  launch: phaseLaunch(state, phase, planText, lanes),
 })
 
 const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>): LoopState => {
@@ -56,11 +66,11 @@ const withBrief = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-
   return { ...state, brief: event.brief }
 }
 
-const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>, planText: string | undefined): Action => {
+const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kickoff-done' }>, planText: string | undefined, lanes: LaneOwnership): Action => {
   if (state.status !== 'kickoff') return { state }
   const first = state.phases[0]
   if (first === undefined) return { state: { ...state, status: 'idle' }, notify: `${state.milestone}: the plan has no phases` }
-  return launchPhase(withBrief(state, event), first, planText)
+  return launchPhase(withBrief(state, event), first, planText, lanes)
 }
 
 const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phase-result' }>): Action => {
@@ -73,11 +83,11 @@ const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phas
   return { state: { ...state, status: 'retro', results }, launch: { workflow: 'retro', args: {} } }
 }
 
-const onRetroDone = (state: LoopState, planText: string | undefined): Action => {
+const onRetroDone = (state: LoopState, planText: string | undefined, lanes: LaneOwnership): Action => {
   if (state.status !== 'retro') return { state }
   const phase = nextPhase(state, planText)
   if (phase === undefined) return { state: { ...state, status: 'exit' }, launch: exitLaunch(state) }
-  return launchPhase(state, phase, planText)
+  return launchPhase(state, phase, planText, lanes)
 }
 
 const onExitResult = (state: LoopState, event: Extract<LoopEvent, { type: 'exit-result' }>): Action => {
@@ -88,10 +98,10 @@ const onExitResult = (state: LoopState, event: Extract<LoopEvent, { type: 'exit-
   return escalated(state, escalation, `${state.milestone} merge refused: ${gate}`)
 }
 
-const transition = (state: LoopState, event: LoopEvent, planText: string | undefined): Action => {
-  if (event.type === 'kickoff-done') return onKickoffDone(state, event, planText)
+const transition = (state: LoopState, event: LoopEvent, planText: string | undefined, lanes: LaneOwnership): Action => {
+  if (event.type === 'kickoff-done') return onKickoffDone(state, event, planText, lanes)
   if (event.type === 'phase-result') return onPhaseResult(state, event)
-  if (event.type === 'retro-done') return onRetroDone(state, planText)
+  if (event.type === 'retro-done') return onRetroDone(state, planText, lanes)
   return onExitResult(state, event)
 }
 
@@ -100,4 +110,5 @@ const heldWhilePaused = (before: LoopState, action: Action): Action => {
   return { ...action, launch: undefined, state: { ...action.state, pending: action.launch } }
 }
 
-export const nextAction = (state: LoopState, event: LoopEvent, planText?: string): Action => heldWhilePaused(state, transition(state, event, planText))
+export const nextAction = (state: LoopState, event: LoopEvent, planText?: string, lanes: LaneOwnership = {}): Action =>
+  heldWhilePaused(state, transition(state, event, planText, lanes))

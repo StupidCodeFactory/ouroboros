@@ -96,9 +96,11 @@ const ouroborosAgent = agent => `ouroboros:${agent}`
 const eagerPreamble = file =>
   args.eager_dir ? `Before anything else, read ${args.eager_dir}/${file} in full and follow the skills it holds.\n` : ''
 
-const implementerFile = () => (args.lane ? `implementer-${args.lane}.md` : 'implementer.md')
+const laneOf = task => (task && task.lane) || args.lane
 
-const lanePrefix = () => (args.lane ? `Lane ${args.lane}. ` : '')
+const implementerFile = task => (laneOf(task) ? `implementer-${laneOf(task)}.md` : 'implementer.md')
+
+const lanePrefix = task => (laneOf(task) ? `Lane ${laneOf(task)}. ` : '')
 
 const taskHeading = task => `Milestone ${args.milestone} ${args.phase}, task ${task.id}: ${task.title}`
 
@@ -207,7 +209,7 @@ const IMPLEMENT_INSTRUCTION = 'Implement it outside-in, red first; tick each pla
 const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of this phase: commit on its branch and never merge.'
 
 const implementPrompt = (task, isolated) =>
-  `${eagerPreamble(implementerFile())}${lanePrefix()}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
+  `${eagerPreamble(implementerFile(task))}${lanePrefix(task)}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
   `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 
 const sliceText = task => (args.brief_dir ? `Brief slice: ${args.brief_dir}/${task.id}.md.\n` : '')
@@ -218,7 +220,7 @@ const LEAN_FIX_RULE =
   'Read only that plan section, the brief slice and the diff above; do not re-read the full brief, the whole plan or your skills, your agent memory carries the rest. Fix these findings and nothing else.'
 
 const fixPrompt = (entry, blocking) =>
-  `${lanePrefix()}${taskHeading(entry.task)}: fix round.\n${planReference(entry.task)}\n${sliceText(entry.task)}` +
+  `${lanePrefix(entry.task)}${taskHeading(entry.task)}: fix round.\n${planReference(entry.task)}\n${sliceText(entry.task)}` +
   `Task diff (commits ${entry.commits.join(', ') || 'none'}):\n${entry.hunks.map(hunkLine).join('\n')}\n${LEAN_FIX_RULE}\n` +
   `Blocking findings:\n${JSON.stringify(distinctFindings(blocking))}${COMMIT_RULE}${RESULT_INSTRUCTION}`
 

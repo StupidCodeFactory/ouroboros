@@ -1,15 +1,15 @@
-export type PhaseTask = { id: string; title: string; line: number; unchecked: number }
+export type PhaseTask = { id: string; title: string; line: number; unchecked: number; lane?: string }
 export type UncheckedBox = { task: string; line: number; text: string }
 export type ActiveDrafts = { spec: string; plan: string }
 
 export const STATE_PATH = '.claude/ouroboros/state.json'
 export const GIT_COMMON_DIR = ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']
 const TASK_HEADING = /^### Task (\S+?):\s+(.*)$/
-const PHASE_TAG = /\s*\((P\d+)\)\s*$/
+const PHASE_TAG = /\s*\((P\d+)(?:,\s*([\w-]+))?\)\s*$/
 const UNCHECKED_BOX = /^\s*- \[ \] (.*)$/
 const DROPPED_BOX = /^~~.*~~ dropped:/
 
-type Heading = { id: string; title: string; phase: string | undefined; index: number }
+type Heading = { id: string; title: string; phase: string | undefined; lane: string | undefined; index: number }
 
 export const checkoutRootOf = (gitCommonDirStdout: string) => {
   const commonDir = gitCommonDirStdout.trim()
@@ -30,7 +30,8 @@ const headingAt = (line: string, index: number): Heading | undefined => {
   const match = TASK_HEADING.exec(line)
   if (!match) return undefined
   const rawTitle = match[2] as string
-  return { id: match[1] as string, title: rawTitle.replace(PHASE_TAG, ''), phase: PHASE_TAG.exec(rawTitle)?.[1], index }
+  const tag = PHASE_TAG.exec(rawTitle)
+  return { id: match[1] as string, title: rawTitle.replace(PHASE_TAG, ''), phase: tag?.[1], lane: tag?.[2], index }
 }
 
 const headingsOf = (lines: string[]) => lines.flatMap((line, index) => headingAt(line, index) ?? [])
@@ -64,6 +65,7 @@ export const phaseTasks = (planText: string, phase: string): PhaseTask[] => {
     title: heading.title,
     line: heading.index + 1,
     unchecked: openBoxesIn(lines, heading).length,
+    ...(heading.lane === undefined ? {} : { lane: heading.lane }),
   }))
 }
 

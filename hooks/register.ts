@@ -221,6 +221,8 @@ async function settle($: EngineInterface, action: Action): Promise<{ state: Loop
   return { state: performed.state, note: [action.notify, performed.note].filter(Boolean).join('; ') || undefined }
 }
 
+const laneOwnership = (config: OuroborosConfig) => Object.fromEntries(Object.entries(config.lanes ?? {}).map(([lane, settings]) => [lane, settings.owned_paths ?? []]))
+
 const isAbsolutePath = (path: string) => path.startsWith('/')
 
 async function existsInProject($: EngineInterface, path: string) {
@@ -246,7 +248,12 @@ async function committedPhases($: EngineInterface, phases: string[]) {
 }
 
 async function loopEvidence($: EngineInterface, state: LoopState): Promise<Evidence> {
-  return { briefPath: await briefOnDisk($, state), committedPhases: await committedPhases($, state.phases), planText: await activePlanText($) }
+  return {
+    briefPath: await briefOnDisk($, state),
+    committedPhases: await committedPhases($, state.phases),
+    planText: await activePlanText($),
+    lanes: laneOwnership(await readConfig($)),
+  }
 }
 
 async function offerPending($: EngineInterface, state: LoopState) {
@@ -371,7 +378,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
   const event = await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json))
-  return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($)))
+  return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
 
 async function repositoryRoot($: EngineInterface) {

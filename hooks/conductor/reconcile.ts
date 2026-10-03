@@ -1,9 +1,10 @@
 import { firstUncheckedBox, phaseTasks } from '../drafts'
 import { bareName } from './events'
+import type { LaneOwnership } from './lanes'
 import type { LoopState } from './state'
 import { exitLaunch, phaseLaunch } from './transitions'
 
-export type Evidence = { briefPath?: string; committedPhases: string[]; planText?: string }
+export type Evidence = { briefPath?: string; committedPhases: string[]; planText?: string; lanes?: LaneOwnership }
 
 const everyPhaseCarriesTasks = (phases: string[], planText: string | undefined) =>
   planText !== undefined && phases.every(phase => phaseTasks(planText, phase).length > 0)
@@ -39,9 +40,9 @@ const withKnownBrief = (state: LoopState, evidence: Evidence): LoopState => {
   return { ...state, brief_path: evidence.briefPath }
 }
 
-const offering = (state: LoopState, phase: string | undefined, planText: string | undefined): LoopState => {
+const offering = (state: LoopState, phase: string | undefined, evidence: Evidence): LoopState => {
   if (phase === undefined) return { ...state, status: 'exit', pending: exitLaunch(state) }
-  return { ...state, status: 'phase', current: phase, pending: phaseLaunch(state, phase, planText) }
+  return { ...state, status: 'phase', current: phase, pending: phaseLaunch(state, phase, evidence.planText, evidence.lanes) }
 }
 
 export const reconcilePending = (state: LoopState, evidence: Evidence) => {
@@ -51,7 +52,7 @@ export const reconcilePending = (state: LoopState, evidence: Evidence) => {
     const stale = staleness(reconciled, evidence)
     if (stale?.reason === undefined) break
     dropped.push(`dropped ${stale.label}: ${stale.reason}`)
-    reconciled = offering(withKnownBrief(reconciled, evidence), stale.next, evidence.planText)
+    reconciled = offering(withKnownBrief(reconciled, evidence), stale.next, evidence)
   }
   return { state: reconciled, dropped }
 }
