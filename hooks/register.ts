@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { isProcessIncident, parseFindings } from './findings'
 import { incidentLogPath, incidentRow } from './incident_log'
+import { IMPLEMENTER_AGENTS, RETRO_PROMPT, isPhaseWorkflow, isRetroTrigger } from './retro'
 
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
 const INCIDENT_LOG_HEADER = '# Incidents\n\n'
@@ -56,14 +57,42 @@ async function showOpenIncidents($: EngineInterface) {
   $.ui.status(`skills: ${await countOpenIncidents($)} open`)
 }
 
+async function retroPendingDenial($: EngineInterface) {
+  const openIncidents = await countOpenIncidents($)
+  if (openIncidents === 0) return undefined
+  return { deny: `retro pending: ${openIncidents} open incidents` }
+}
+
+async function startRetro($: EngineInterface) {
+  await $.agent.spawn({ subagentType: 'skill-curator', description: 'retro', prompt: RETRO_PROMPT })
+  $.ui.toast('retro started')
+}
+
 export const register: Register = on => {
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    const agentType = e.subagent_type ?? ''
+    if (IMPLEMENTER_AGENTS.has(agentType)) return (await retroPendingDenial($)) ?? next(e)
+
     const answered = await next(e)
-    if (!REVIEWING_AGENTS.has(e.subagent_type ?? '')) return answered
+    if (!REVIEWING_AGENTS.has(agentType)) return answered
     if (answered.deny !== undefined || answered.isError) return answered
 
     await logIncidents($, agentText(answered.result))
     await showOpenIncidents($)
     return answered
+  })
+
+  on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
+    if (!isPhaseWorkflow(e)) return next(e)
+    return (await retroPendingDenial($)) ?? next(e)
+  })
+
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const ran = await next(e)
+    const hasSucceeded = ran.deny === undefined && ran.isError === undefined
+    if (!isRetroTrigger(e.command, hasSucceeded)) return ran
+
+    await startRetro($)
+    return ran
   })
 }
