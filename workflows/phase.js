@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
-  description: 'One phase: implement every task outside-in, review the whole phase diff in parallel, fix by task for up to three rounds, checkpoint, then open the phase PR into the default branch and merge it',
-  phases: [{ title: 'Implement' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }, { title: 'Merge' }],
+  description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff in parallel, fix by task for up to three rounds, checkpoint, then open the phase PR for the user to merge',
+  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -78,10 +78,10 @@ const PR_SCHEMA = {
   required: ['pr_url'],
 }
 
-const PHASE_MERGE_SCHEMA = {
+const BRANCH_SCHEMA = {
   type: 'object',
-  properties: { pr_url: { type: 'string' }, merged: { type: 'boolean' }, failing_gate: { type: 'string' } },
-  required: ['pr_url', 'merged', 'failing_gate'],
+  properties: { branch: { type: 'string' }, base: { type: 'string' } },
+  required: ['branch', 'base'],
 }
 
 const MAX_FIX_ROUNDS = 3
@@ -191,12 +191,6 @@ const tasksToRetry = (entries, merge) =>
   entries.filter(entry => entry.changed && !(merge?.merged ?? []).includes(entry.task.id))
 
 const distinctFindings = (findings) => findings.filter((finding, position) => !isCoveredBy(finding, findings.slice(0, position)))
-
-const mergeVerdict = (merge) => {
-  if (!merge) return { status: 'escalate', failing_gate: 'phase PR merge returned nothing' }
-  if (merge.merged) return { status: 'checkpointed', failing_gate: '' }
-  return { status: 'escalate', failing_gate: merge.failing_gate || 'phase PR not merged' }
-}
 
 const checkpointVerdict = (checkpoint) => {
   if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
@@ -391,7 +385,7 @@ const pullRequestPrompt = (summary, evidence) =>
   `${lanePrefix()}${args.milestone} ${args.phase} is checkpointed. Push the milestone branch and open a pull request from it into the default branch, ` +
   `titled "${args.milestone} ${args.phase}: <one-line summary>", following the repository's PR conventions. ` +
   `Put this in the description:\n${reviewSummary(summary)}\nCheckpoint evidence:\n${evidence}\n` +
-  'When an open PR from this branch already exists, update its title and description instead. Return its `pr_url`.'
+  'When an open PR from this branch already exists, update its title and description instead. Never merge it: the user reviews and merges. Return its `pr_url`.'
 
 const openPullRequest = (summary, evidence) =>
   agent(pullRequestPrompt(summary, evidence), {
@@ -401,18 +395,26 @@ const openPullRequest = (summary, evidence) =>
     effort: stageEffort(args.effort, 'merge'),
   })
 
-const phaseMergePrompt = prUrl =>
-  `${eagerPreamble('architect.md')}${args.milestone} ${args.phase}: final review of ${prUrl}. Check every gate: CI green, the checkpoint green with its evidence in the description, ` +
-  'zero blocking findings left by the phase review. Merge only if every gate passes, with `gh pr merge <number> --merge` ' +
-  '(never squash or rebase: the milestone branch carries on into the next phase); otherwise comment the failing gate, leave it open and name it in `failing_gate`.'
+const freshBranchPrompt = () =>
+  `${args.milestone} ${args.phase} starts on a fresh branch: the previous phase PR was merged into the default branch. ` +
+  `Run \`git fetch origin\`, then create and switch to \`${args.fresh_branch}\` from the default branch's origin tip. ` +
+  'Never merge or rebase the old milestone branch. Return the `branch` you are on and its `base` commit.'
 
-const mergePullRequest = prUrl =>
-  agent(phaseMergePrompt(prUrl), {
-    agentType: ouroborosAgent('architect'),
-    schema: PHASE_MERGE_SCHEMA,
-    phase: 'Merge',
-    effort: stageEffort(args.effort, 'architect_review'),
+const startFreshBranch = () =>
+  agent(freshBranchPrompt(), {
+    agentType: ouroborosAgent('implementer'),
+    schema: BRANCH_SCHEMA,
+    phase: 'Branch',
+    effort: stageEffort(args.effort, 'checkpoint'),
   })
+
+const opensPullRequest = () => args.merge_policy !== 'architect'
+
+if (args.fresh_branch) {
+  phase('Branch')
+  const branched = await startFreshBranch()
+  if (!branched || branched.branch !== args.fresh_branch) return { status: 'escalate', phase: args.phase, tasks: [], follow_ups: [], evidence: '', failing_gate: `fresh branch ${args.fresh_branch} not created` }
+}
 
 phase('Implement')
 const tasks = args.tasks ?? []
@@ -431,10 +433,9 @@ phase('Checkpoint')
 const verdict = checkpointVerdict(await checkpoint())
 if (verdict.status !== 'checkpointed') return { status: verdict.status, ...summary, evidence: verdict.evidence }
 
+if (!opensPullRequest()) return { status: 'checkpointed', ...summary, evidence: verdict.evidence }
+
 phase('Pull request')
 const opened = await openPullRequest(summary, verdict.evidence)
 if (!opened) return { status: 'escalate', ...summary, evidence: verdict.evidence, failing_gate: 'phase PR not opened' }
-
-phase('Merge')
-const merged = mergeVerdict(await mergePullRequest(opened.pr_url))
-return { status: merged.status, ...summary, evidence: verdict.evidence, pr_url: opened.pr_url, failing_gate: merged.failing_gate }
+return { status: 'checkpointed', ...summary, evidence: verdict.evidence, pr_url: opened.pr_url, merged: false }

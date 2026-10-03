@@ -48,6 +48,7 @@ const phaseEvent = (json: Record<string, unknown> | undefined, phase: string | n
   phase: typeof json?.phase === 'string' ? json.phase : (phase ?? ''),
   result_path: resultPath,
   ...(typeof json?.failing_gate === 'string' && json.failing_gate !== '' ? { failing_gate: json.failing_gate } : {}),
+  ...(typeof json?.pr_url === 'string' && json.pr_url !== '' && json.merged !== true ? { pr_url: json.pr_url } : {}),
 })
 
 const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {

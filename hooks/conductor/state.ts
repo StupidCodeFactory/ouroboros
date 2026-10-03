@@ -17,6 +17,7 @@ export type LoopState = {
   brief_path?: string
   brief_dir?: string
   touches?: Record<string, string[]>
+  awaiting_merge?: { phase: string; pr_url: string }
   run?: Run
   pending?: Launch
   paused?: boolean

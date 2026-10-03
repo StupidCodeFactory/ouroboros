@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { LoopState } from './state'
-import { nextAction } from './transitions'
+import { mergeAccepted, nextAction } from './transitions'
 
 const base: LoopState = { milestone: 'M1', phases: ['P0', 'P1'], current: 'P0', status: 'phase', escalations: [], results: {} }
 
@@ -52,6 +52,22 @@ test('an escalated phase still starts the retro, so its incidents never strand t
   const { state, launch } = nextAction({ ...base }, { type: 'phase-result', status: 'escalate', phase: 'P0', result_path: 'r0.json' })
   expect(state.status).toBe('escalated')
   expect(launch?.workflow).toBe('retro')
+})
+
+test('a phase whose PR waits for the user holds the next phase until the merge', () => {
+  const reported = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json', pr_url: 'https://github.com/o/r/pull/841' })
+  expect(reported.state).toMatchObject({ status: 'retro', awaiting_merge: { phase: 'P0', pr_url: 'https://github.com/o/r/pull/841' } })
+  expect(reported.notify).toBe('M1 P0: pull request https://github.com/o/r/pull/841 is open for your review and merge')
+
+  const afterRetro = nextAction(reported.state, { type: 'retro-done' }, PLAN)
+  expect(afterRetro.launch).toBeUndefined()
+  expect(afterRetro.state).toMatchObject({ status: 'phase', current: 'P1', pending: { workflow: 'phase', args: { phase: 'P1' } } })
+  expect(afterRetro.notify).toBe('M1: merge https://github.com/o/r/pull/841 (P0), then /ouroboros resume starts P1 on a fresh branch')
+})
+
+test('a merged phase PR releases the held phase onto a fresh branch from the default branch', () => {
+  const held = { ...base, current: 'P1', awaiting_merge: { phase: 'P0', pr_url: 'u' }, pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } } }
+  expect(mergeAccepted(held, 'milestone/')).toEqual({ ...base, current: 'P1', pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P1', fresh_branch: 'milestone/m1-p1' } } })
 })
 
 test('a checkpointed phase starts the retro', () => {

@@ -37,3 +37,9 @@ test('a phase reported checkpointed without its phase commit on the branch escal
   expect(verifiedCheckpoint(reported, true)).toEqual(reported)
   expect(verifiedCheckpoint({ type: 'retro-done' }, false)).toEqual({ type: 'retro-done' })
 })
+
+test('an unmerged phase PR travels with the phase result', () => {
+  const run = { id: 'w1', workflow: 'phase' }
+  const json = { status: 'checkpointed', phase: 'P0', pr_url: 'https://github.com/o/r/pull/841', tasks: [] }
+  expect(loopEventOf('', 'r.json', run, 'P0', json)).toEqual({ type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r.json', pr_url: 'https://github.com/o/r/pull/841' })
+})

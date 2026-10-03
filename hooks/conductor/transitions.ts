@@ -8,7 +8,7 @@ import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
   | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string }
-  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string }
+  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
@@ -82,7 +82,12 @@ const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phas
     const escalation: Escalation = { kind: 'task-red', phase: event.phase, summary: event.failing_gate ? `${event.phase}: ${event.failing_gate}` : `${event.phase} escalated after its fix rounds`, result_path: event.result_path }
     return { ...escalated({ ...state, results }, escalation, `${state.milestone} ${event.phase} escalated: see ${event.result_path}`), launch: RETRO_LAUNCH }
   }
-  return { state: { ...state, status: 'retro', results }, launch: RETRO_LAUNCH }
+  if (event.pr_url === undefined) return { state: { ...state, status: 'retro', results }, launch: RETRO_LAUNCH }
+  return {
+    state: { ...state, status: 'retro', results, awaiting_merge: { phase: event.phase, pr_url: event.pr_url } },
+    launch: RETRO_LAUNCH,
+    notify: `${state.milestone} ${event.phase}: pull request ${event.pr_url} is open for your review and merge`,
+  }
 }
 
 const onRetroDone = (state: LoopState, planText: string | undefined, lanes: LaneOwnership): Action => {
@@ -107,10 +112,31 @@ const transition = (state: LoopState, event: LoopEvent, planText: string | undef
   return onExitResult(state, event)
 }
 
+const heldForMerge = (before: LoopState, action: Action): Action => {
+  const waiting = before.awaiting_merge
+  if (waiting === undefined || action.launch === undefined || before.status !== 'retro') return action
+  const next = (action.launch.args as { phase?: unknown }).phase
+  const nextName = typeof next === 'string' ? next : 'the milestone exit'
+  return {
+    state: { ...action.state, pending: action.launch },
+    notify: `${before.milestone}: merge ${waiting.pr_url} (${waiting.phase}), then /ouroboros resume starts ${nextName} on a fresh branch`,
+  }
+}
+
+const freshBranchName = (prefix: string, milestone: string, phase: string) => `${prefix}${milestone}-${phase}`.toLowerCase()
+
+export const mergeAccepted = (state: LoopState, branchPrefix: string): LoopState => {
+  const { awaiting_merge: _merged, ...released } = state
+  const pending = released.pending
+  const phase = (pending?.args as { phase?: unknown } | undefined)?.phase
+  if (pending === undefined || typeof phase !== 'string') return released
+  return { ...released, pending: { ...pending, args: { ...pending.args, fresh_branch: freshBranchName(branchPrefix, state.milestone, phase) } } }
+}
+
 const heldWhilePaused = (before: LoopState, action: Action): Action => {
   if (!before.paused || action.launch === undefined) return action
   return { ...action, launch: undefined, state: { ...action.state, pending: action.launch } }
 }
 
 export const nextAction = (state: LoopState, event: LoopEvent, planText?: string, lanes: LaneOwnership = {}): Action =>
-  heldWhilePaused(state, transition(state, event, planText, lanes))
+  heldWhilePaused(state, heldForMerge(state, transition(state, event, planText, lanes)))

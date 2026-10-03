@@ -6,6 +6,8 @@ export type Stage = 'brief' | 'implement' | 'review' | 'architect_review' | 'aud
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type OuroborosConfig = {
   lanes?: Record<string, { owned_paths?: string[] }>
+  merge_policy?: 'ask' | 'architect'
+  branch_prefix?: string
   agents?: Record<string, AgentConfig>
   planning_skills?: string[]
   eager_skills_max_chars?: number

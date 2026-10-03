@@ -103,7 +103,7 @@ test('/ouroboros resume submits the queued launch to the model', async ($, on) =
 
   await run($, 'resume')
 
-  expect(submitted).toEqual([expect.stringContaining('Workflow name=phase args={"milestone":"M1","phase":"P1"}')])
+  expect(submitted).toEqual([expect.stringContaining('Workflow name=phase args={"milestone":"M1","phase":"P1","merge_policy":"ask"}')])
 })
 
 test('/ouroboros status submits nothing', async ($, on) => {
@@ -468,6 +468,68 @@ test('/ouroboros resume reports duplicate plan task ids instead of launching', a
 
   expect(resumed.text).toBe('ouroboros: the plan has duplicate task ids: 18; renumber them before running a phase')
   expect(stateOn(disk)).toMatchObject({ paused: true })
+})
+
+const heldForMerge = JSON.stringify({
+  milestone: 'M1', phases: ['P0', 'P1'], current: 'P1', status: 'phase', escalations: [], results: {},
+  drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' },
+  awaiting_merge: { phase: 'P0', pr_url: 'https://github.com/o/r/pull/841' },
+  pending: { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } },
+})
+
+const prWorld = (on: On, prState: string) => {
+  const disk = new Map<string, string>([['.claude/ouroboros.json', CONFIG], ['.claude/ouroboros/state.json', heldForMerge], ['/repo/docs/drafts/plans/m1.md', PLAN]])
+  const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
+  mock.env(on, { HOME: '/home' })
+  on('process.run', (_, e) => {
+    const stdout = e.argv[0] === 'gh' ? `${prState}\n` : e.argv.some(arg => arg.startsWith('--grep=')) ? '' : '/repo/.git\n'
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    disk.set(e.path.includes('.claude/') ? e.path.slice(e.path.indexOf('.claude/')) : e.path, e.text)
+    return { value: undefined }
+  })
+  on('session.id', () => ({ value: 'main-session' }))
+  on('session.send', () => ({ isDelivered: true as const }))
+  return disk
+}
+
+test('/ouroboros resume keeps waiting while the phase PR is still open', async ($, on) => {
+  const disk = prWorld(on, 'OPEN')
+
+  const resumed = await run($, 'resume')
+
+  expect(resumed.text).toBe('waiting for you to merge https://github.com/o/r/pull/841 (P0, OPEN); resume again once it is merged')
+  expect(stateOn(disk)).toMatchObject({ awaiting_merge: { phase: 'P0' }, pending: { workflow: 'phase' } })
+})
+
+test('/ouroboros resume after the merge starts the held phase on a fresh branch', async ($, on) => {
+  const disk = prWorld(on, 'MERGED')
+
+  const resumed = await run($, 'resume')
+
+  expect(resumed.text).toContain('"fresh_branch":"milestone/m1-p1"')
+  expect(resumed.text).toContain('"merge_policy":"ask"')
+  expect(stateOn(disk).awaiting_merge).toBeUndefined()
+})
+
+test('a merge or rebase in the main session is refused while a workflow writes to the worktree', async ($, on) => {
+  worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight })
+  const reached: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    reached.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false } }
+  })
+
+  const merge = await $.tool.call({ tool: 'Bash', command: 'git merge origin/main' })
+  const rebase = await $.tool.call({ tool: 'Bash', command: 'git rebase origin/main' })
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+
+  expect(merge.deny ?? merge.text).toContain('phase (wf-1) is writing to this worktree')
+  expect(rebase.deny ?? rebase.text).toContain('phase (wf-1) is writing to this worktree')
+  expect(reached).toEqual(['git status'])
 })
 
 test('the loop header rides on the prompt context', async ($, on) => {

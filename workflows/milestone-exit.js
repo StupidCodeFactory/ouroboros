@@ -78,6 +78,8 @@ const opened = await agent(pullRequestPrompt(audited.evidence), {
 })
 if (!opened) return refused(audited.evidence, '', 'pull request not opened')
 
+if (args.merge_policy !== 'architect') return { checks_green: true, evidence: audited.evidence, pr_url: opened.pr_url, merged: false, failing_gate: `waiting for the user to merge ${opened.pr_url}` }
+
 phase('Merge')
 const reviewed = await agent(mergePrompt(opened.pr_url), {
   agentType: ouroborosAgent('architect'),

@@ -15,7 +15,7 @@ import { reconcilePending } from './conductor/reconcile'
 import { adoptRun, positionLine, setPosition } from './conductor/repair'
 import type { Repair } from './conductor/repair'
 import type { Evidence } from './conductor/reconcile'
-import { nextAction } from './conductor/transitions'
+import { mergeAccepted, nextAction } from './conductor/transitions'
 import type { Action, LoopEvent } from './conductor/transitions'
 import { isProcessIncident, parseFindings, phaseIncidents } from './findings'
 import type { Finding } from './findings'
@@ -29,7 +29,7 @@ import type { InlinedSkill } from './eager_skills/inline'
 import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
-import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
+import { IMPLEMENTER_AGENTS, RETRO_PROMPT, checkpointPhaseOf, isMergeOrRebase, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger } from './retro'
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { stripFrontmatter } from './skill_text'
 
@@ -214,14 +214,17 @@ async function deliverPendingLaunch($: EngineInterface, state: LoopState) {
   await $.session.send({ to: { sessionId: await $.session.id() }, text: launchNote(state.pending) })
 }
 
-const withEffort = (launch: Launch, effort: OuroborosConfig['effort']): Launch => {
-  if (effort === undefined) return launch
-  return { ...launch, args: { ...launch.args, effort } }
+const MERGING_WORKFLOWS = new Set(['phase', 'milestone-exit'])
+
+const withConfigArgs = (launch: Launch, config: OuroborosConfig): Launch => {
+  const effort = config.effort === undefined ? {} : { effort: config.effort }
+  const mergePolicy = MERGING_WORKFLOWS.has(launch.workflow) ? { merge_policy: config.merge_policy ?? 'ask' } : {}
+  return { ...launch, args: { ...launch.args, ...effort, ...mergePolicy } }
 }
 
 async function perform($: EngineInterface, state: LoopState, launch: Launch): Promise<{ state: LoopState; note?: string }> {
   if (launch.workflow === 'retro') return { state: { ...state, run: await startRetro($), pending: undefined } }
-  const pending = withEffort(launch, (await readConfig($)).effort)
+  const pending = withConfigArgs(launch, await readConfig($))
   return { state: { ...state, pending, run: undefined }, note: launchNote(pending) }
 }
 
@@ -293,9 +296,24 @@ async function assertPlanReady($: EngineInterface) {
 
 const loudly = (error: unknown) => `ouroboros: ${error instanceof Error ? error.message : String(error)}`
 
+async function pullRequestState($: EngineInterface, prUrl: string) {
+  const { stdout } = await $.process.run(['gh', 'pr', 'view', prUrl, '--json', 'state', '--jq', '.state'])
+  return stdout.trim()
+}
+
+async function releasedFromMerge($: EngineInterface, state: LoopState): Promise<LoopState | string> {
+  const waiting = state.awaiting_merge
+  if (waiting === undefined) return state
+  const prState = await pullRequestState($, waiting.pr_url)
+  if (prState !== 'MERGED') return `waiting for you to merge ${waiting.pr_url} (${waiting.phase}, ${prState || 'state unknown'}); resume again once it is merged`
+  return mergeAccepted(state, (await readConfig($)).branch_prefix ?? 'milestone/')
+}
+
 async function resumeLoop($: EngineInterface, state: LoopState) {
   await assertPlanReady($)
-  const resumed = { ...state, paused: false }
+  const released = await releasedFromMerge($, state)
+  if (typeof released === 'string') return released
+  const resumed = { ...released, paused: false }
   const reconciled = reconcilePending(resumed, await loopEvidence($, resumed))
   return [...reconciled.dropped, `resumed: ${await offerPending($, reconciled.state)}`].join('\n')
 }
@@ -753,6 +771,8 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const writer = isMergeOrRebase(e.command) ? (await readLoopState($)).run : undefined
+    if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree` }
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
     if (await isPrematureCheckpoint($, e.command)) return ran

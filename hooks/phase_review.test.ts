@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, distinctFindings, mergeVerdict, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -200,17 +200,4 @@ test('one line three reviewers flagged reaches the fix agent once', () => {
   const sameLine = ['reviewer', 'architect', 'auditor'].map(reviewer => ({ ...SINGLETON_FINDING, reviewer, task: '3' }))
   const other = { ...SINGLETON_FINDING, line: 27, reviewer: 'auditor', task: '3' }
   expect(distinctFindings([...sameLine, other])).toEqual([sameLine[0], other])
-})
-
-test('a merged phase PR checkpoints the phase', () => {
-  expect(mergeVerdict({ pr_url: 'https://github.com/o/r/pull/12', merged: true, failing_gate: '' })).toEqual({ status: 'checkpointed', failing_gate: '' })
-})
-
-test('a phase PR left open escalates with its failing gate', () => {
-  expect(mergeVerdict({ pr_url: 'https://github.com/o/r/pull/12', merged: false, failing_gate: 'CI red: rspec' })).toEqual({ status: 'escalate', failing_gate: 'CI red: rspec' })
-  expect(mergeVerdict({ pr_url: 'https://github.com/o/r/pull/12', merged: false, failing_gate: '' })).toEqual({ status: 'escalate', failing_gate: 'phase PR not merged' })
-})
-
-test('a merge agent that returned nothing escalates', () => {
-  expect(mergeVerdict(null)).toEqual({ status: 'escalate', failing_gate: 'phase PR merge returned nothing' })
 })
