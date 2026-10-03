@@ -73,3 +73,8 @@ export const loopEventOf = (text: string, resultPath: string, run: Run, currentP
   if (workflow === 'milestone-exit') return exitEvent(json)
   return phaseEvent(json, currentPhase, resultPath)
 }
+
+export const verifiedCheckpoint = (event: LoopEvent, phaseCommitted: boolean): LoopEvent => {
+  if (event.type !== 'phase-result' || event.status !== 'checkpointed' || phaseCommitted) return event
+  return { ...event, status: 'escalate', failing_gate: `the workflow reported checkpointed but no phase(${event.phase}) commit is on the branch` }
+}

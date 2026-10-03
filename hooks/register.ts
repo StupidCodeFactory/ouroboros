@@ -6,7 +6,7 @@ import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
-import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, workflowResultOf } from './conductor/events'
+import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workflowCall } from './conductor/header'
 import { kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
@@ -387,6 +387,11 @@ async function isPrematureCheckpoint($: EngineInterface, command: string) {
 
 const resultPhase = (json: Record<string, unknown> | undefined, state: LoopState) => (typeof json?.phase === 'string' ? json.phase : (state.current ?? ''))
 
+async function withVerifiedCheckpoint($: EngineInterface, event: LoopEvent) {
+  if (event.type !== 'phase-result' || event.status !== 'checkpointed') return event
+  return verifiedCheckpoint(event, await hasPhaseCommit($, event.phase))
+}
+
 async function appendToPlan($: EngineInterface, section: string) {
   const drafts = await activeDrafts($)
   if (section === '' || drafts === null) return
@@ -409,7 +414,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json))
   if (bareName(run.workflow) === 'phase') await fileIncidents($, phaseIncidents(json), resultPhase(json, state))
-  const event = await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json))
+  const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)))
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
 

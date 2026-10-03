@@ -334,6 +334,32 @@ test('a finished phase files its skill and agent findings as incidents, then sta
   expect(stateOn(disk)).toMatchObject({ status: 'retro', run: { workflow: 'retro' } })
 })
 
+test('a phase reported checkpointed with no phase commit on the branch escalates instead of moving on', async ($, on) => {
+  const disk = new Map<string, string>([['.claude/ouroboros.json', CONFIG], ['.claude/ouroboros/state.json', phaseInFlight], ['/repo/docs/drafts/plans/m1.md', PLAN]])
+  const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
+  mock.env(on, { HOME: '/home' })
+  on('process.run', (_, e) => {
+    const stdout = e.argv.some(arg => arg.startsWith('--grep=')) ? '' : '/repo/.git\n'
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    disk.set(e.path.includes('.claude/') ? e.path.slice(e.path.indexOf('.claude/')) : e.path, e.text)
+    return { value: undefined }
+  })
+  on('session.receive', (_, e) => ({ text: e.text }))
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
+
+  const delivered = await $.session.receive({ origin: NOTIFICATION, text: 'Task wf-1 completed: {"status":"checkpointed","phase":"P0","tasks":[]}' })
+
+  expect(delivered.text).toContain('M1 P0 escalated')
+  expect(stateOn(disk)).toMatchObject({
+    status: 'escalated',
+    escalations: [{ phase: 'P0', summary: 'P0: the workflow reported checkpointed but no phase(P0) commit is on the branch' }],
+  })
+})
+
 test('an escalating phase notification reaches the main session as one line', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight })
   on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { loopEventOf, isLoopNotification } from './events'
+import { loopEventOf, isLoopNotification, verifiedCheckpoint } from './events'
 
 const PHASE_RUN = { id: 'wf-1', workflow: 'phase' }
 
@@ -25,4 +25,15 @@ test('kickoff, retro and exit results map to their events', () => {
   expect(loopEventOf('fixed 2', 'c.json', { id: 'c', workflow: 'retro' }, 'P1')).toEqual({ type: 'retro-done' })
   expect(loopEventOf('{"merged":false,"failing_gate":"R1"}', 'e.json', { id: 'e', workflow: 'milestone-exit' }, 'P1')).toEqual({ type: 'exit-result', merged: false, failing_gate: 'R1' })
   expect(loopEventOf('{"merged":true}', 'e.json', { id: 'e', workflow: 'milestone-exit' }, 'P1')).toEqual({ type: 'exit-result', merged: true })
+})
+
+test('a phase reported checkpointed without its phase commit on the branch escalates', () => {
+  const reported = { type: 'phase-result' as const, status: 'checkpointed' as const, phase: 'P1', result_path: 'r1.json' }
+  expect(verifiedCheckpoint(reported, false)).toEqual({
+    ...reported,
+    status: 'escalate',
+    failing_gate: 'the workflow reported checkpointed but no phase(P1) commit is on the branch',
+  })
+  expect(verifiedCheckpoint(reported, true)).toEqual(reported)
+  expect(verifiedCheckpoint({ type: 'retro-done' }, false)).toEqual({ type: 'retro-done' })
 })
