@@ -110,10 +110,14 @@ export const overlaps = (left: PlannedTask, right: PlannedTask) => {
   return left.touches.some(file => (right.touches ?? []).some(other => pathsOverlap(file, other)))
 }
 
+export const touchesNothing = (task: PlannedTask) => task.touches !== undefined && task.touches.length === 0
+
+export const isCheckpointTask = (task: PlannedTask) => /^\s*(?:P\d+\s+checkpoint|checkpoint\s+P\d+)\b/i.test(task.title)
+
 export const waveIndexes = (tasks: PlannedTask[]) => {
   const indexes: number[] = []
   tasks.forEach((task, position) => {
-    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
+    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (touchesNothing(task) || overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
     indexes.push(Math.max(0, ...after))
   })
   return indexes

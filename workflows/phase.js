@@ -231,10 +231,14 @@ const overlaps = (left, right) => {
   return left.touches.some(file => (right.touches ?? []).some(other => pathsOverlap(file, other)))
 }
 
+const touchesNothing = (task) => task.touches !== undefined && task.touches.length === 0
+
+const isCheckpointTask = (task) => /^\s*(?:P\d+\s+checkpoint|checkpoint\s+P\d+)\b/i.test(task.title)
+
 const waveIndexes = (tasks) => {
   const indexes = []
   tasks.forEach((task, position) => {
-    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
+    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (touchesNothing(task) || overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
     indexes.push(Math.max(0, ...after))
   })
   return indexes
@@ -324,6 +328,24 @@ const mergeWave = entries =>
   })
 
 const NOTHING_MERGED = { merged: [], conflicted: [] }
+
+const landedPrompt = task =>
+  `${lanePrefix(task)}${taskHeading(task)} already landed on the current branch in an earlier run.\n${planReference(task)}\n` +
+  'Find its commits on this branch since it left the default branch (commit subjects and bodies, the files its plan section names, its ticked boxes). Change nothing and make no commit. ' +
+  'Return `changed` true, `blocked` false, those `commits`, every line range they changed as `hunks` ({ file, start, end }, lines in the current files), `evidence` (the git commands you ran), `branch`, and as `handoff` a short note on what the commits do. ' +
+  'When you find no commit for it, return `changed` false and say so in `evidence`.'
+
+const recoverLanded = async task =>
+  entryOf(
+    task,
+    await located(landedPrompt(task), {
+      agentType: ouroborosAgent('implementer'),
+      schema: IMPLEMENT_SCHEMA,
+      phase: 'Implement',
+      label: `landed:${task.id}`,
+      effort: 'low',
+    }),
+  )
 
 const implementInPlace = async task => entryOf(task, await implement(task, false))
 
@@ -608,11 +630,15 @@ if (args.fresh_branch) {
 }
 
 phase('Implement')
-const tasks = args.tasks ?? []
-if (!tasks.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
+const checkpointTasks = (args.tasks ?? []).filter(isCheckpointTask)
+if (checkpointTasks.length) log(`${args.phase}: skipping ${checkpointTasks.map(task => task.id).join(', ')}, the checkpoint stage does that work`)
+const tasks = (args.tasks ?? []).filter(task => !isCheckpointTask(task))
+const landed = (args.landed ?? []).filter(task => !isCheckpointTask(task))
+if (!tasks.length && !landed.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
+const landedEntries = await parallel(landed.map(task => () => recoverLanded(task)))
 const implementedEntries = []
 for (const wave of taskWaves(tasks)) implementedEntries.push(...(await runWave(wave)))
-const entries = inPlanOrder(implementedEntries, tasks)
+const entries = inPlanOrder([...landedEntries.filter(Boolean), ...implementedEntries], [...landed, ...tasks])
 
 const blockedEntries = entries.filter(entry => entry.blocked)
 if (blockedEntries.length) {

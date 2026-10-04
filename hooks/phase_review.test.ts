@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, fixRequests, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointVerdict, fixRequests, isCheckpointTask, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -259,4 +259,20 @@ test('a suite failure blocks the task that broke it even outside that task\'s di
 test('a suite failure that names no task of this phase is a follow-up, not a blocker nobody can fix', () => {
   const orphan = { reviewer: 'suite', source: 'suite' as const, file: 'spec/shop/flaky_spec.rb', line: 9, summary: 'order-dependent failure', blocking: true }
   expect(triagePhaseFindings([orphan], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [orphan] })
+})
+
+test('a task that touches no files runs after every task before it, never in the first wave', () => {
+  const tasks = [
+    { id: '62', title: 'queue', touches: ['lib/queue.rb'] },
+    { id: '63', title: 'drain', touches: ['lib/drain.rb'] },
+    { id: '47', title: 'verify the drain end to end', touches: [] },
+    { id: '64', title: 'dashboard', touches: ['services/dashboard/app.py'] },
+  ]
+  expect(idsOf(taskWaves(tasks))).toEqual([['62', '63', '64'], ['47']])
+})
+
+test('a plan task that is the phase checkpoint is recognised by its title', () => {
+  expect(isCheckpointTask({ id: '48', title: 'P4 checkpoint' })).toBe(true)
+  expect(isCheckpointTask({ id: '71', title: 'Checkpoint P7: full suite and phase commit' })).toBe(true)
+  expect(isCheckpointTask({ id: '30', title: 'checkpoint store keeps the last offset' })).toBe(false)
 })
