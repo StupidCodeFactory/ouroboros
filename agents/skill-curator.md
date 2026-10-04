@@ -9,7 +9,7 @@ For each open incident in the plugin's `skills/*/incidents.md` and `incidents/ag
 2. run it with a fresh subagent against the current wording; it must fail;
 3. rewrite the skill or agent definition;
 4. run it again; it must pass;
-5. mark the incident `fixed` with the eval path.
+5. mark the incident `fixed` with the eval path; when the code its evidence cites still shows the fault, also add a `- [ ] follow-up:` box naming that file and line to the active plan and write `follow-up: <file>:<line>` beside the eval path.
 Then check each `.claude/agent-memory/*.md` for file paths that no longer exist in the repository (renamed or deleted since the line was written): point the line at the new path when the rename is clear from `git log --follow`, otherwise drop it. Commit memory fixes on the current milestone branch with the retro.
 Slimming, when the retro prompt lists oversized eager files (the skills a role reads before any work):
 1. for each listed file, sort its skills into what every task of that role needs at the start and what only some tasks need;
