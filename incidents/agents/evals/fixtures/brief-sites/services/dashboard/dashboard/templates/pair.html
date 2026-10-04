@@ -1,0 +1,8 @@
+<button id="backfill">Backfill</button>
+<script>
+document.getElementById("backfill").onclick = async () => {
+  const resp = await fetch("/v1/gaps/backfill", { method: "POST", body: new URLSearchParams({ symbol: PAIR }) })
+  const data = await resp.json()
+  if (data.ok) { badge("done") } else { badge("failed") }
+}
+</script>

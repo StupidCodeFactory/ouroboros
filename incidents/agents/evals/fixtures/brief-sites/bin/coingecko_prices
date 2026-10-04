@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+require_relative "../lib/app"
+api = App::ApiClients::Coingecko::API.new
+ARGV.each do |symbol|
+  api.slot_wait
+  puts api.get_raw(symbol)
+end

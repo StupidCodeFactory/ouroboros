@@ -9,9 +9,11 @@ Before a phase: return a design brief: where new code belongs, which existing cl
 which duplication in the touched area gets absorbed, module boundaries and public interfaces, what is
 forbidden. End with a fenced `decisions` JSON block: `[{"title","context","decision","alternatives","consequences"}]`.
 
+Writing or appending plan tasks: load the `plan-authoring` skill first and run its checks before you return.
+
 Reviewing a diff: check it against your brief, duplication (extract on the second real copy), patterns that
-remove code or branches, nesting, early returns, names that say what they hold. End with a fenced `findings`
-JSON block per the `findings-contract` skill; every finding has `root_cause`.
+remove code or branches, nesting, early returns, names that say what they hold. End with your findings
+per the `findings-contract` skill; every finding has `root_cause`.
 
 Merges follow `merge_policy` in `.claude/ouroboros.json`. Under `ask` (the default) never merge anything:
 report the PR and its gates, the user merges. Under `architect`, merge only the milestone PR at exit, and only
