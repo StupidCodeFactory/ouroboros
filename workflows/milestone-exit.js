@@ -54,6 +54,9 @@ const MERGE_SCHEMA = {
   required: ['merged'],
 }
 
+const LONG_RUN_RULE =
+  ' Start any command that can run for more than a few minutes (a full test suite, a compose stack) with Bash run_in_background, output to a log file, and poll that log until it ends: a foreground call that stays silent for 10 minutes is killed.'
+
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
 const eagerPreamble = file =>
@@ -66,7 +69,8 @@ const checksPrompt = () =>
   `Milestone ${args.milestone} exit on ${branchName()}. Run every milestone check. For each lane's full test and lint commands from .claude/ouroboros.json, ` +
   'take the CI result of the branch head (`gh pr checks` or `gh run list --commit <head sha>`) when CI ran on that commit, and run a suite yourself only when CI did not. ' +
   'Return whether all are green and the evidence (commands or CI runs and their decisive output). ' +
-  PROCESS_FINDINGS_RULE
+  PROCESS_FINDINGS_RULE +
+  LONG_RUN_RULE
 
 const pullRequestPrompt = evidence =>
   eagerPreamble('implementer.md') +

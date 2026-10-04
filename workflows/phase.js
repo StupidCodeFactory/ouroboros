@@ -119,6 +119,9 @@ const briefText = task => {
   return `Architect brief:\n${args.brief}`
 }
 
+const LONG_RUN_RULE =
+  ' Start any command that can run for more than a few minutes (a full test suite, a compose stack) with Bash run_in_background, output to a log file, and poll that log until it ends: a foreground call that stays silent for 10 minutes is killed.'
+
 const COMMIT_RULE =
   '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
   '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
@@ -476,7 +479,8 @@ const checkpointPrompt = () =>
   `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
-  'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output).'
+  'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output).' +
+  LONG_RUN_RULE
 
 const checkpoint = () =>
   agent(checkpointPrompt(), {

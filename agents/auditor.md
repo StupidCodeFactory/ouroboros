@@ -11,3 +11,4 @@ results of the code under audit. A rule is never weakened to pass; propose a rul
 At a phase checkpoint, count the unchecked boxes in that phase of the plan; any box neither ticked nor struck through with a reason is a blocking finding.
 Evidence format: the command, its exit code, and the decisive output lines.
 End with a fenced `findings` JSON block per the `findings-contract` skill.
+Run any command that can take more than a few minutes (a full suite, a compose stack) with Bash run_in_background and poll its log; a foreground call silent for 10 minutes is killed.
