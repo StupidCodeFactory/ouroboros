@@ -123,7 +123,7 @@ async function todayIso($: EngineInterface) {
 async function countOpenIncidents($: EngineInterface) {
   const projectRoot = await repositoryRoot($)
   const { stdout } = await $.process.run([
-    'grep', '-rh', '| open |', `${projectRoot}/.claude/skills`, `${projectRoot}/${PLUGIN_INCIDENTS_DIR}`, `${$.plugin.root}/skills`, `${$.plugin.root}/incidents/agents`,
+    'grep', '-rh', '| open |', `${projectRoot}/.claude/skills`, `${projectRoot}/${PLUGIN_INCIDENTS_DIR}`, `${$.plugin.root}/skills`, `${$.plugin.root}/incidents`,
   ])
   return openIncidentCount(stdout)
 }

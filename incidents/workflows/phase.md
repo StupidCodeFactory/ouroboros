@@ -1,0 +1,9 @@
+# Incidents
+
+| date | phase | agent | root_cause | skill says | agent did | evidence | status | eval |
+|---|---|---|---|---|---|---|---|---|
+| 2026-10-04 | M2 P3 | implementer | skill-gap | implement every task in a worktree | first run spawned implementers in isolated worktrees (.claude/worktrees/wf_4c0ad97c-*) whose shell context was lost and which lacked the untracked .claude/ouroboros briefs, eager skills and plan; tasks 23-27 returned "verified" with no commits; Task 26 ran before its dependency Task 25 existed (x5) | results w4y7ztcyv.json tasks 23-27 | open | |
+| 2026-10-04 | M2 P3 | implementer | skill-gap | fix rounds address the review findings | three review rounds re-reported the same blocking findings "still open, no fix commit" (RateLimiterUnavailable swallow, stranded heal position, listing_of copy, CoinGecko CLI callers); the fix rounds never touched them (x12) | lib/app/heal_step.rb:176; lib/app/heal_enqueuer.rb:107 | open | |
+| 2026-10-04 | M2 P3, M3 P2 | implementer | skill-gap | the checkpoint runs the full suite | per-task verification ran only touched spec files; the full suite first ran at the checkpoint and found 25 failures (M2) and an order-dependent failure (M3), each needing extra repair runs; nothing makes a fix round run the full suite (x2) | spec/app/exchange_rate_limiter_spec.rb:71; spec/app/import_drain_spec.rb:128 | open | |
+| 2026-10-04 | M2 P3 | implementer | agent-behaviour | report done only with evidence | started the full suite in the background and returned done:false with uncommitted work when the reply was forced (fix:M2:27, repair:M2:suite) (x2) | lib/app/history_prober/contested_symbol_verifier.rb:44 | open | |
+| 2026-10-04 | M2 P3 | orchestrator | skill-gap | lint baseline is a ratchet | no step lowers lint_baseline to the current count at the checkpoint; P3 left 106 while rubocop reported 93 (x1; project row filed in ruby-spec-conventions) | .claude/ouroboros.json:21 | open | |
