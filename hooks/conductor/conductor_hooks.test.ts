@@ -633,6 +633,38 @@ test('a merge or rebase in the main session is refused while a workflow writes t
   expect(reached).toEqual(['git status'])
 })
 
+const retroRunning = JSON.stringify({
+  milestone: 'M1', phases: ['P0', 'P1'], current: 'P0', status: 'retro', escalations: [], results: {},
+  drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, run: { id: 'curator-1', workflow: 'retro' },
+})
+
+test('the curator finishing its turn ends the retro, so no stale retro run is left behind', async ($, on) => {
+  const submitted: string[] = []
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': retroRunning, '/repo/docs/drafts/plans/m1.md': PLAN }, submitted)
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  const clock = mock.clock(on)
+
+  await $.turn.complete({ reason: 'answer', answer: 'fixed 3', durationMs: 1, isAborted: false, turnId: 't9', agentId: 'curator-1' })
+  await clock.settle()
+
+  expect(stateOn(disk).run).toBeUndefined()
+  expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1' })
+  expect(submitted.join('\n')).toContain('Workflow name=phase')
+})
+
+test('a retro in flight never blocks a merge in the main session', async ($, on) => {
+  worldBeneath(on, { '.claude/ouroboros/state.json': retroRunning })
+  const reached: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    reached.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false } }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: 'git merge origin/main' })
+
+  expect(reached).toEqual(['git merge origin/main'])
+})
+
 test('the runtime directory ignores itself, so a project never sees its results, state or briefs as untracked', async ($, on) => {
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN })
 

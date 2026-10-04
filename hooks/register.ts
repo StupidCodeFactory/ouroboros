@@ -243,6 +243,11 @@ function deliverPendingLaunch($: EngineInterface, state: LoopState) {
   submitWhenIdle($, launchNote(state.pending))
 }
 
+function deliverNote($: EngineInterface, settled: { state: LoopState; note?: string }) {
+  if (settled.state.pending !== undefined && !settled.state.paused) return deliverPendingLaunch($, settled.state)
+  if (settled.note !== undefined) submitWhenIdle($, `ouroboros: ${settled.note}`)
+}
+
 const MERGING_WORKFLOWS = new Set(['phase', 'milestone-exit'])
 
 const withConfigArgs = (launch: Launch, config: OuroborosConfig): Launch => {
@@ -541,6 +546,13 @@ async function conductNotification($: EngineInterface, text: string): Promise<{ 
   } catch (error) {
     return { text: `${text}\n\n${loudly(error)}` }
   }
+}
+
+async function finishRetroOf($: EngineInterface, agentId: string) {
+  const state = await readLoopState($)
+  if (state.run?.workflow !== 'retro' || state.run.id !== agentId) return
+  const settled = await settle($, nextAction({ ...state, run: undefined }, { type: 'retro-done' }, await activePlanText($), laneOwnership(await readConfig($))))
+  if (settled.note !== undefined) deliverNote($, settled)
 }
 
 async function repositoryRoot($: EngineInterface) {
@@ -878,6 +890,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) await settlePlanningAfterTurn($)
+    if (e.agentId !== undefined) await finishRetroOf($, e.agentId).catch(error => $.ui.toast(loudly(error)))
     if (e.agentId !== undefined && e.usage !== undefined) await rollOverIfPast($, e.agentId, e.usage)
     return next(e)
   })
@@ -889,7 +902,8 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const writer = isGuardedMerge(e.command, e.agentId) ? (await readLoopState($)).run : undefined
+    const run = isGuardedMerge(e.command, e.agentId) ? (await readLoopState($)).run : undefined
+    const writer = run?.workflow === 'retro' ? undefined : run
     if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree` }
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
