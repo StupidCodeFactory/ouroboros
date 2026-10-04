@@ -116,6 +116,16 @@ const REVIEWERS = [
   { agent: 'architect', stage: 'architect_review' },
 ]
 
+const locationLine = () => {
+  const parts = [
+    args.worktree ? `Repository: the git worktree ${args.worktree}${args.branch ? ` on branch ${args.branch}` : ''}; cd there first and run every command there.` : '',
+    args.test_db ? `Test database: ${args.test_db}; point every test run at it.` : '',
+  ].filter(Boolean)
+  return parts.length ? `${parts.join(' ')}\n` : ''
+}
+
+const located = (prompt, opts) => agent(`${locationLine()}${prompt}`, opts)
+
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
 const eagerPreamble = file =>
@@ -288,7 +298,7 @@ const fixPrompt = (request, isolated) =>
 const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
 
 const implement = (task, isolated) =>
-  agent(implementPrompt(task, isolated), {
+  located(implementPrompt(task, isolated), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Implement',
@@ -304,7 +314,7 @@ const mergePrompt = entries =>
   'Return the task ids you merged in `merged` and those that conflicted in `conflicted`.'
 
 const mergeWave = entries =>
-  agent(mergePrompt(entries), {
+  located(mergePrompt(entries), {
     agentType: ouroborosAgent('implementer'),
     schema: MERGE_SCHEMA,
     phase: 'Implement',
@@ -326,7 +336,7 @@ const rebasePrompt = entry =>
 const rebaseInPlace = async entry =>
   entryOf(
     entry.task,
-    await agent(rebasePrompt(entry), {
+    await located(rebasePrompt(entry), {
       agentType: ouroborosAgent('implementer'),
       schema: IMPLEMENT_SCHEMA,
       phase: 'Implement',
@@ -348,12 +358,20 @@ const runParallelWave = async wave => {
   return isolated.map(entry => retried.find(retry => retry.task.id === entry.task.id) ?? entry)
 }
 
-const runWave = async wave => (wave.length === 1 ? [await implementInPlace(wave[0])] : runParallelWave(wave))
+const runsInPlace = wave => wave.length === 1 || Boolean(args.worktree)
+
+const inPlaceOneByOne = async (items, run) => {
+  const results = []
+  for (const item of items) results.push(await run(item))
+  return results
+}
+
+const runWave = async wave => (runsInPlace(wave) ? inPlaceOneByOne(wave, implementInPlace) : runParallelWave(wave))
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
 const fix = (request, round, isolated) =>
-  agent(fixPrompt(request, isolated), {
+  located(fixPrompt(request, isolated), {
     agentType: ouroborosAgent('implementer'),
     schema: IMPLEMENT_SCHEMA,
     phase: 'Review',
@@ -383,7 +401,7 @@ const recheckPrompt = (reviewer, entries, blocking) =>
 const roundPrompt = (reviewer, round, entries, blocking) => (round === 1 ? reviewPrompt(reviewer, entries) : recheckPrompt(reviewer, entries, blocking))
 
 const review = (reviewer, round, entries, blocking) =>
-  agent(roundPrompt(reviewer.agent, round, entries, blocking), {
+  located(roundPrompt(reviewer.agent, round, entries, blocking), {
     agentType: ouroborosAgent(reviewer.agent),
     schema: FINDINGS_SCHEMA,
     phase: 'Review',
@@ -447,7 +465,7 @@ const fixRound = async (entries, blocking, round) => {
   const fixHunks = []
   for (const wave of taskWaves(requests.map(request => ({ id: request.entry.task.id, title: request.entry.task.title, touches: filesOf(request.entry) })))) {
     const waveRequests = wave.map(planned => requests.find(request => request.entry.task.id === planned.id))
-    fixHunks.push(...(waveRequests.length === 1 ? await fixInPlace(waveRequests[0], round) : await fixParallelWave(waveRequests, round)))
+    fixHunks.push(...(runsInPlace(waveRequests) ? (await inPlaceOneByOne(waveRequests, request => fixInPlace(request, round))).flat() : await fixParallelWave(waveRequests, round)))
   }
   return fixHunks
 }
@@ -459,7 +477,7 @@ const suitePrompt = entries =>
   LONG_RUN_RULE
 
 const suiteFailures = async entries => {
-  const suite = await agent(suitePrompt(entries), {
+  const suite = await located(suitePrompt(entries), {
     agentType: ouroborosAgent('auditor'),
     schema: SUITE_SCHEMA,
     phase: 'Suite',
@@ -523,7 +541,7 @@ const checkpointPrompt = () =>
   LONG_RUN_RULE
 
 const checkpoint = () =>
-  agent(checkpointPrompt(), {
+  located(checkpointPrompt(), {
     agentType: ouroborosAgent('auditor'),
     schema: CHECKPOINT_SCHEMA,
     phase: 'Checkpoint',
@@ -541,7 +559,7 @@ const pullRequestPrompt = (summary, evidence) =>
   'When an open PR from this branch already exists, update its title and description instead. Never merge it: the user reviews and merges. Return its `pr_url`.'
 
 const openPullRequest = (summary, evidence) =>
-  agent(pullRequestPrompt(summary, evidence), {
+  located(pullRequestPrompt(summary, evidence), {
     agentType: ouroborosAgent('implementer'),
     schema: PR_SCHEMA,
     phase: 'Pull request',
@@ -555,7 +573,7 @@ const freshBranchPrompt = () =>
   'Never merge or rebase the old milestone branch. Return the `branch` you are on and its `base` commit.'
 
 const startFreshBranch = () =>
-  agent(freshBranchPrompt(), {
+  located(freshBranchPrompt(), {
     agentType: ouroborosAgent('implementer'),
     schema: BRANCH_SCHEMA,
     phase: 'Branch',
@@ -570,7 +588,7 @@ const syncPrompt = () =>
   'When it conflicts, run `git merge --abort`, never resolve it by hand, and return `synced` false with the `conflicted_files`. Otherwise return `synced` true and no files.'
 
 const syncDefaultBranch = () =>
-  agent(syncPrompt(), {
+  located(syncPrompt(), {
     agentType: ouroborosAgent('implementer'),
     schema: SYNC_SCHEMA,
     phase: 'Sync',
