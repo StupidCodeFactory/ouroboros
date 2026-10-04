@@ -4,32 +4,33 @@ description: Load before any planning or implementation work; the plan file's ch
 ---
 # Checkbox progress
 
-The plan file is the single source of truth for what is done. Conversation memory, agent memory and summaries are not: they are lost on compaction, rollover, resume and a new session. A step not ticked in the plan did not happen.
+The plan file is the only record of what is done. Memory, summaries and conversation are lost on compaction, rollover, resume and a new session: a step not ticked in the plan did not happen, and a ticked step says what happened. Writing or appending plan tasks: load `plan-authoring`.
 
-## Writing a plan
+## Start
 
-- Every task and every step is a checkbox: `- [ ]`. A task heading carries its steps as nested boxes.
-- A task heading is `### Task <id>: <title> (PN)`; the trailing `(PN)` is the phase the task belongs to. A plan whose headings carry no phase tag is a single phase.
-- Each step names its verification (the command to run and the expected result), so ticking it has a clear bar.
-- Each phase ends with a box for its checkpoint commit.
+1. Read the plan named in your prompt in the main checkout's `drafts_dir` (from `.claude/ouroboros.json`), the directory above `git rev-parse --path-format=absolute --git-common-dir`; never a worktree's copy.
+2. Start at the first unchecked box of your task, whatever you remember. After compaction, a rollover, a resume or a fix round, read it again.
+3. Mirror the task's open steps into the session task list; the plan wins on any disagreement.
 
-## Before starting work
+## Each box
 
-1. Read the plan file named in your prompt (or under `drafts_dir` from `.claude/ouroboros.json`). Drafts live in the main checkout's `drafts_dir`, the directory above `git rev-parse --path-format=absolute --git-common-dir`; never read or edit a worktree's copy.
-2. Find the first unchecked box in your phase. That is where you are, whatever you remember.
-3. Mirror that task's unchecked steps into the session task list so they stay visible while you work. The plan file still wins on any disagreement.
+When you finish a step, compare what you did and saw with the step's text and expected result, and write the box as one of:
 
-## While working
+| What happened | The box |
+|---|---|
+| done as written, expected result seen | `- [x] step` |
+| done another way (another call, file, test or double) | `- [x] ~~step~~ instead: what you did, and why` |
+| result differed from the expected one (green where red was expected) | `- [x] ~~step~~ instead: what you saw, and why` |
+| not done: not needed, impossible, or out of time | `- [ ] ~~step~~ dropped: reason` |
 
-- Tick a box (`- [x]`) right after its verification passes, in the same commit as the work it covers.
-- Never tick a box without its verification evidence. A failing step stays unchecked.
-- Work discovered on the way becomes a new unchecked box under the current task (`- [ ] fix: …`, `- [ ] follow-up: …`) before you do it. Never do untracked work.
-- Never delete an unchecked box. Work that is dropped is struck through with the reason: `- [ ] ~~step~~ dropped: reason`.
+- Tick in the commit that holds the work, after its verification passed; never before.
+- Work found on the way gets its own box (`- [ ] fix: …`, `- [ ] follow-up: …`) before you do it, and follows the same table.
+- Never delete a box.
 
-## After a break
+## Before you return
 
-After compaction, a memory rollover, a resume or a fix round, re-read the plan and restart from the first unchecked box. Never resume from a summary alone.
+Read your task's section again. A bare `- [ ]` means unfinished work: do it, or strike it with `dropped:` and the reason. A ticked box whose text is not what you did is a false record: rewrite it per the table.
 
 ## Done
 
-A phase is done only when every box in it is ticked or struck through with a reason. The auditor counts unchecked boxes in the phase and fails the checkpoint if any remain.
+A phase is done when every box in it is ticked or struck with a reason; the auditor fails the checkpoint otherwise.
