@@ -161,3 +161,18 @@ test('an implementer runs when no incident is open', async ($, on) => {
 
   expect(reached).toEqual(['build'])
 })
+
+test('only the project\'s own skill incidents gate its phases, never the plugin\'s backlog', async ($, on) => {
+  const grepped: Array<readonly string[]> = []
+  on('process.run', (_, e) => {
+    if (e.argv[0] === 'grep') grepped.push(e.argv)
+    const stdout = e.argv[0] === 'git' ? '/work/shop\n' : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('tool.call', { tool: 'Workflow' }, () => ({ deny: 'reached the engine' }))
+
+  await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: { phase: 'P2' } })
+
+  expect(grepped.length).toBeGreaterThan(0)
+  for (const argv of grepped) expect(argv.slice(3)).toEqual(['/work/shop/.claude/skills'])
+})

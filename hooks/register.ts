@@ -181,10 +181,21 @@ async function showStatus($: EngineInterface) {
   $.ui.status(`skills: ${await countOpenIncidents($)} open · ADR ${await countProposedAdrs($)} proposed`)
 }
 
+async function gatingIncidentDirs($: EngineInterface) {
+  const projectRoot = await repositoryRoot($)
+  const ownSkills = `${projectRoot}/.claude/skills`
+  return projectRoot === $.plugin.root ? [ownSkills, `${projectRoot}/skills`, `${projectRoot}/incidents`] : [ownSkills]
+}
+
+async function countGatingIncidents($: EngineInterface) {
+  const { stdout } = await $.process.run(['grep', '-rh', '| open |', ...(await gatingIncidentDirs($))])
+  return openIncidentCount(stdout)
+}
+
 async function retroPendingDenial($: EngineInterface) {
-  const openIncidents = await countOpenIncidents($)
+  const openIncidents = await countGatingIncidents($)
   if (openIncidents === 0) return undefined
-  return { deny: `retro pending: ${openIncidents} open incidents` }
+  return { deny: `retro pending: ${openIncidents} open incidents in this project's skills` }
 }
 
 async function eagerFiles($: EngineInterface) {
