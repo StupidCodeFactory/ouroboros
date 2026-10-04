@@ -1,6 +1,6 @@
 export type Hunk = { file: string; start: number; end: number }
 export type Reviewer = { agent: string; stage: string }
-export type ReviewFinding = { reviewer?: string; task?: string; file?: string; line?: number; summary: string; blocking: boolean }
+export type ReviewFinding = { reviewer?: string; task?: string; file?: string; line?: number; summary: string; blocking: boolean; source?: 'suite' }
 export type TaskDiffs = Record<string, Hunk[]>
 export type Implemented = { changed?: boolean; commits?: string[]; hunks?: Hunk[]; evidence?: string; blocked?: boolean }
 
@@ -52,11 +52,15 @@ export const withOwner = (finding: ReviewFinding, diffs: TaskDiffs) => {
 
 export const isInOwnDiff = (finding: ReviewFinding, diffs: TaskDiffs) => finding.task !== undefined && isInDiff(finding, diffs[finding.task] ?? [])
 
+export const isOwnSuiteFailure = (finding: ReviewFinding, diffs: TaskDiffs) => finding.source === 'suite' && finding.task !== undefined && diffs[finding.task] !== undefined
+
+export const blocksItsTask = (finding: ReviewFinding, diffs: TaskDiffs) => isInOwnDiff(finding, diffs) || isOwnSuiteFailure(finding, diffs)
+
 export const triagePhaseFindings = (findings: ReviewFinding[], diffs: TaskDiffs) => {
   const raised = findings.filter(finding => finding.blocking).map(finding => withOwner(finding, diffs))
   return {
-    blocking: raised.filter(finding => isInOwnDiff(finding, diffs)),
-    followUps: raised.filter(finding => !isInOwnDiff(finding, diffs)),
+    blocking: raised.filter(finding => blocksItsTask(finding, diffs)),
+    followUps: raised.filter(finding => !blocksItsTask(finding, diffs)),
   }
 }
 

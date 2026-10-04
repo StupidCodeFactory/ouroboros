@@ -250,3 +250,13 @@ test('a task whose implementer left no handoff note still gets its fix, with an 
   const entry = { task: { id: '3', title: '3' } }
   expect(fixRequests([entry], [{ ...SINGLETON_FINDING, task: '3' }])[0]?.handoff).toBe('')
 })
+
+test('a suite failure blocks the task that broke it even outside that task\'s diff', () => {
+  const brokenOldSpec = { reviewer: 'suite', source: 'suite' as const, task: '3', file: 'spec/shop/legacy_report_spec.rb', line: 40, summary: 'legacy report spec now fails: expected 3 rows, got 0', blocking: true }
+  expect(triagePhaseFindings([brokenOldSpec], PHASE_DIFFS)).toEqual({ blocking: [brokenOldSpec], followUps: [] })
+})
+
+test('a suite failure that names no task of this phase is a follow-up, not a blocker nobody can fix', () => {
+  const orphan = { reviewer: 'suite', source: 'suite' as const, file: 'spec/shop/flaky_spec.rb', line: 9, summary: 'order-dependent failure', blocking: true }
+  expect(triagePhaseFindings([orphan], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [orphan] })
+})

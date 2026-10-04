@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
   description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), merge in the default branch, checkpoint, then open the phase PR for the user to merge',
-  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Review' }, { title: 'Sync' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
+  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Sync' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -25,6 +25,7 @@ const FINDINGS_SCHEMA = {
           agent: { type: 'string' },
           task: { type: 'string' },
           blocking: { type: 'boolean' },
+          source: { type: 'string', enum: ['suite'] },
         },
         required: ['summary', 'root_cause', 'blocking', 'task'],
       },
@@ -78,6 +79,23 @@ const PR_SCHEMA = {
   type: 'object',
   properties: { pr_url: { type: 'string' } },
   required: ['pr_url'],
+}
+
+const SUITE_SCHEMA = {
+  type: 'object',
+  properties: {
+    green: { type: 'boolean' },
+    failures: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { task: { type: 'string' }, file: { type: 'string' }, line: { type: 'number' }, summary: { type: 'string' } },
+        required: ['file', 'summary'],
+      },
+    },
+    evidence: { type: 'string' },
+  },
+  required: ['green', 'failures', 'evidence'],
 }
 
 const SYNC_SCHEMA = {
@@ -177,11 +195,15 @@ const withOwner = (finding, diffs) => {
 
 const isInOwnDiff = (finding, diffs) => finding.task !== undefined && isInDiff(finding, diffs[finding.task] ?? [])
 
+const isOwnSuiteFailure = (finding, diffs) => finding.source === 'suite' && finding.task !== undefined && diffs[finding.task] !== undefined
+
+const blocksItsTask = (finding, diffs) => isInOwnDiff(finding, diffs) || isOwnSuiteFailure(finding, diffs)
+
 const triagePhaseFindings = (findings, diffs) => {
   const raised = findings.filter(finding => finding.blocking).map(finding => withOwner(finding, diffs))
   return {
-    blocking: raised.filter(finding => isInOwnDiff(finding, diffs)),
-    followUps: raised.filter(finding => !isInOwnDiff(finding, diffs)),
+    blocking: raised.filter(finding => blocksItsTask(finding, diffs)),
+    followUps: raised.filter(finding => !blocksItsTask(finding, diffs)),
   }
 }
 
@@ -356,7 +378,7 @@ const reviewPrompt = (reviewer, entries) =>
 
 const recheckPrompt = (reviewer, entries, blocking) =>
   `As the ${reviewer}, re-check these blocking findings on the ${args.phase} diff after the fixes:\n${JSON.stringify(blocking)}\n` +
-  `Read only these findings and the fix commits; do not re-read the brief, the plan or your skills. Report each one still open and anything the fixes broke; do not review the rest again. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
+  `Read only these findings and the fix commits; do not re-read the brief, the plan or your skills. Report each one still open (keep its \`source\`; rerun the failing test of a suite failure) and anything the fixes broke; do not review the rest again. Tasks:\n${entries.map(taskLine).join('\n')}\n${REVIEW_RULES}`
 
 const roundPrompt = (reviewer, round, entries, blocking) => (round === 1 ? reviewPrompt(reviewer, entries) : recheckPrompt(reviewer, entries, blocking))
 
@@ -430,14 +452,32 @@ const fixRound = async (entries, blocking, round) => {
   return fixHunks
 }
 
-const reviewPhase = async entries => {
+const suitePrompt = entries =>
+  `${eagerPreamble('auditor.md')}${args.milestone} ${args.phase} is implemented. Run the full test commands ${laneScope()} in .claude/ouroboros.json once, before review. Tasks:\n${entries.map(taskLine).join('\n')}\n` +
+  'For each failing example, name in `task` the task whose commits broke it (git log and git blame against the commits above; leave it out when no task of this phase did, e.g. an order-dependent failure that also fails on the base). ' +
+  'Return `green`, the `failures` (file, line, one-sentence summary, task) and the `evidence` (commands, exit codes, decisive output). Make no commit.' +
+  LONG_RUN_RULE
+
+const suiteFailures = async entries => {
+  const suite = await agent(suitePrompt(entries), {
+    agentType: ouroborosAgent('auditor'),
+    schema: SUITE_SCHEMA,
+    phase: 'Suite',
+    effort: stageEffort(args.effort, 'checkpoint'),
+  })
+  if (!suite || suite.green) return []
+  return suite.failures.map(failure => ({ ...failure, reviewer: 'suite', source: 'suite', root_cause: 'code-bug', blocking: true }))
+}
+
+const reviewPhase = async (entries, suiteRaised) => {
   const findings = []
   const followUps = []
   let blocking = []
   let fixHunks = []
   for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     if (round > 1) fixHunks = await fixRound(entries, blocking, round)
-    const raised = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
+    const reviewed = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
+    const raised = round === 1 ? [...suiteRaised, ...reviewed] : reviewed
     findings.push(...raised)
     const triaged = triagePhaseFindings(raised, diffsOf(entries))
     followUps.push(...triaged.followUps)
@@ -562,9 +602,11 @@ if (blockedEntries.length) {
   return { status: 'escalate', ...unreviewed, evidence: '', failing_gate: `blocked: ${blockedEntries.map(entry => `task ${entry.task.id} (${entry.evidence.slice(0, 160)})`).join('; ')}` }
 }
 
-phase('Review')
 const reviewed = entries.filter(entry => entry.changed)
-const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
+phase('Suite')
+const suiteRaised = reviewed.length ? await suiteFailures(reviewed) : []
+phase('Review')
+const outcome = reviewed.length ? await reviewPhase(reviewed, suiteRaised) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
