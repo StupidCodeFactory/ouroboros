@@ -82,3 +82,9 @@ const PLAN_WITH_DUPLICATE_IDS = [
 test('a plan with duplicate task ids fails loudly instead of running either copy', () => {
   expect(() => phaseTasks(PLAN_WITH_DUPLICATE_IDS, 'P1')).toThrow('the plan has duplicate task ids: 18, 19; renumber them before running a phase')
 })
+
+test('a step that needs a resource only a person has is not open work for the phase', () => {
+  const plan = ['### Task 9: audit the archive (P5)', '- [x] Step 1: write the audit', '- [ ] Step 2: run the R1/R7 audit against the real archive (needs: drive credentials)'].join('\n')
+  expect(firstUncheckedBox(plan, 'P5')).toBeNull()
+  expect(phaseTasks(plan, 'P5')[0]?.unchecked).toBe(0)
+})

@@ -8,6 +8,7 @@ const TASK_HEADING = /^### Task (\S+?):\s+(.*)$/
 const PHASE_TAG = /\s*\((P\d+)(?:,\s*([\w-]+))?\)\s*$/
 const UNCHECKED_BOX = /^\s*- \[ \] (.*)$/
 const DROPPED_BOX = /^~~.*~~ dropped:/
+const NEEDS_A_PERSON = /\(needs: [^)]+\)/
 
 type Heading = { id: string; title: string; phase: string | undefined; lane: string | undefined; index: number }
 
@@ -55,7 +56,7 @@ const sectionEnd = (lines: string[], start: number) => {
 
 const openBoxText = (line: string) => {
   const text = UNCHECKED_BOX.exec(line)?.[1]
-  if (text === undefined || DROPPED_BOX.test(text)) return undefined
+  if (text === undefined || DROPPED_BOX.test(text) || NEEDS_A_PERSON.test(text)) return undefined
   return text
 }
 

@@ -79,6 +79,7 @@ const CHECKPOINT_SCHEMA = {
         required: ['file', 'summary'],
       },
     },
+    manual_steps: { type: 'array', items: { type: 'string' } },
   },
   required: ['committed', 'sha', 'suite_green', 'evidence'],
 }
@@ -583,7 +584,8 @@ const checkpointPrompt = () =>
   `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
   'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output). ' +
-  'When anything is red, list each failing example in `failures` (file, line, one-sentence summary, and `task` when git blame shows whose commits broke it).' +
+  'When anything is red, list each failing example in `failures` (file, line, one-sentence summary, and `task` when git blame shows whose commits broke it). ' +
+  'Skip every plan step marked `(needs: <resource>)`: it needs something only a person has (credentials, production data). List each in `manual_steps` as "<task>: <step> (needs: <resource>)"; it never makes the checkpoint red.' +
   LONG_RUN_RULE
 
 const checkpoint = () =>
@@ -594,9 +596,11 @@ const checkpoint = () =>
     effort: stageEffort(args.effort, 'checkpoint'),
   })
 
+const manualChecklist = steps => (steps.length ? `\nBefore merging, a person must do these (put them in the description as unchecked boxes):\n${steps.map(step => `- [ ] ${step}`).join('\n')}` : '')
+
 const reviewSummary = summary =>
   `Review rounds: ${summary.review_rounds}. Tasks: ${summary.tasks.map(task => `${task.id} ${task.status}`).join(', ')}. ` +
-  `Follow-ups added to the plan: ${summary.follow_ups.length}.`
+  `Follow-ups added to the plan: ${summary.follow_ups.length}.${manualChecklist(summary.manual_steps ?? [])}`
 
 const pullRequestPrompt = (summary, evidence) =>
   `${lanePrefix()}${args.milestone} ${args.phase} is checkpointed. Push the milestone branch and open a pull request from it into the default branch, ` +
@@ -697,6 +701,7 @@ const verdict = checkpointVerdict(checkpointed)
 const checkpointSha = checkpointed ? checkpointed.sha : ''
 if (verdict.status !== 'checkpointed') return { status: verdict.status, ...summary, evidence: verdict.evidence }
 
+summary.manual_steps = (checkpointed && checkpointed.manual_steps) || []
 if (!opensPullRequest()) return { status: 'checkpointed', ...summary, evidence: verdict.evidence, checkpoint_sha: checkpointSha }
 
 phase('Pull request')

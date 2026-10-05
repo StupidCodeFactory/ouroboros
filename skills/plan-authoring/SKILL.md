@@ -23,3 +23,4 @@ Read every task once more and fix each that fails one of these:
 7. A done-bar is the task's goal (no offense left, the count named), never a relative one ("fewer offenses").
 8. An expected output is what the command prints in this repository today, after the step.
 9. A claim about another task ("turns green here") holds in plan order: everything it needs lands in this task or an earlier one.
+- A step that needs something only a person has (real credentials, production data, a paid account) ends with `(needs: <resource>)`. Phases skip it, and it becomes an unchecked item on the phase PR instead of a red checkpoint.
