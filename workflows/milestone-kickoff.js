@@ -1,7 +1,7 @@
 export const meta = {
   name: 'milestone-kickoff',
-  description: 'Milestone kickoff: a fresh branch from the default branch when asked, architect brief and decisions, then at once the planner appends the phase-tagged tasks and the auditor writes the checks red',
-  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Plan' }, { title: 'Checks' }],
+  description: 'Milestone kickoff: a fresh branch from the default branch when asked, then at once one architect pass for the brief, decisions and phase-tagged tasks, and the auditor writing the checks red',
+  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Checks' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -37,7 +37,7 @@ const TASK_SLICES = {
   },
 }
 
-const BRIEF_SCHEMA = {
+const DESIGN_SCHEMA = {
   type: 'object',
   properties: {
     brief: {
@@ -46,20 +46,11 @@ const BRIEF_SCHEMA = {
       required: ['common', 'tasks'],
     },
     decisions: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, rationale: { type: 'string' } }, required: ['title'] } },
-    findings: PROCESS_FINDINGS,
-  },
-  required: ['brief', 'decisions'],
-}
-
-const PLAN_SCHEMA = {
-  type: 'object',
-  properties: {
     phases: { type: 'array', items: { type: 'string' } },
     tasks_added: { type: 'number' },
-    tasks: TASK_SLICES,
     findings: PROCESS_FINDINGS,
   },
-  required: ['phases', 'tasks_added', 'tasks'],
+  required: ['brief', 'decisions', 'phases', 'tasks_added'],
 }
 
 const BRANCH_SCHEMA = {
@@ -92,34 +83,31 @@ const phaseScope = () => (args.phase ? `, phase ${args.phase} only (earlier phas
 
 const goalLine = () => (args.goal ? `Goal: ${args.goal}.\n` : '')
 
-const briefPrompt = () =>
+const SLICE_RULE =
+  '`guidance` (where its code goes as file:line anchors, the spec file to extend, what to reuse, so the implementer reads only those lines) and `touches` (every repository-relative file it will create, change or delete). '
+
+const designPrompt = () =>
   eagerPreamble('architect.md') +
   `Milestone ${args.milestone} kickoff${phaseScope()}. ${goalLine()}` +
-  `Read the spec ${draftReference(args.spec)} and the plan ${draftReference(args.plan)}. ` +
-  'Write the design brief for this milestone in two parts. `brief.common`: what every task shares, the forbidden list, the review gates, ' +
-  'the constraints and seams, what must not change. `brief.tasks`: one entry per plan task (its `### Task <id>` id) with `guidance` ' +
-  '(where its code goes as file:line anchors, the spec file to extend, what to reuse, so the implementer reads only those lines) and `touches` (every repository-relative file it will create, change or delete). ' +
-  'List every architectural decision the milestone commits to as `decisions`, each with its rationale. ' +
-  PROCESS_FINDINGS_RULE
-
-const briefText = brief => [brief.common, ...brief.tasks.map(task => `Task ${task.id}: ${task.guidance} Touches: ${task.touches.join(', ')}`)].join('\n')
-
-const planPrompt = brief =>
-  eagerPreamble('architect.md') +
-  `Milestone ${args.milestone}${phaseScope()}. Append \`## Part C: ${args.milestone}${args.phase ? ` ${args.phase}` : ''} tasks\` to the plan ${draftReference(args.plan)} ` +
-  (args.phase ? `Every task you add belongs to phase ${args.phase}: tag each heading \`(${args.phase})\`. Earlier parts and phases of this milestone already exist; keep them untouched. ` : '') +
+  `Read the spec ${draftReference(args.spec)} and the plan ${draftReference(args.plan)} once, then do both parts below in this one pass.\n` +
+  '1. The design brief. `brief.common`: what every task shares, the forbidden list, the review gates, the constraints and seams, what must not change. ' +
+  'List every architectural decision the milestone commits to as `decisions`, each with its rationale.\n' +
+  `2. The tasks. Append \`## Part C: ${args.milestone}${args.phase ? ` ${args.phase}` : ''} tasks\` to the plan, ` +
+  (args.phase ? `every task in it belonging to phase ${args.phase} (tag each heading \`(${args.phase})\`; earlier parts and phases already exist), ` : '') +
   'in the same format as its Part B: every task heading `### Task <id>: <title> (PN)` ends with its phase tag, every step is a `- [ ]` box. ' +
   'No task is left untagged, the milestone acceptance-checks task included: tag it with the first phase and give it only check steps; any code a check needs (a script, a helper) is its own tagged task. ' +
-  'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. ' +
-  `Keep the existing parts untouched. ${TEST_NAMING}Architect brief:\n${brief}\n` +
-  'Return the phases you tagged in order, how many tasks you added, and for each added task its brief slice in `tasks`: ' +
-  '`guidance` (where its code goes as file:line anchors, the spec file to extend, what to reuse, so the implementer reads only those lines) and `touches` (every repository-relative file it will create, change or delete). ' +
+  'Prefer fewer, larger tasks: one task is one coherent change an implementer finishes in one sitting, so merge steps that touch the same files. ' +
+  'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. Keep the existing parts untouched. ' +
+  TEST_NAMING +
+  '`brief.tasks` holds one entry per task of this milestone, existing and added, keyed by its `### Task <id>` id, with ' +
+  SLICE_RULE +
+  'Return the brief, the decisions, the phases you tagged in order and how many tasks you added. ' +
   PROCESS_FINDINGS_RULE
 
-const checksPrompt = brief =>
+const checksPrompt = () =>
   eagerPreamble('auditor.md') +
-  `Milestone ${args.milestone}. From the spec ${draftReference(args.spec)} and this brief:\n${brief}\n` +
-  'Write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
+  `Milestone ${args.milestone}${phaseScope()}. From the spec ${draftReference(args.spec)}, ` +
+  'write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
   TEST_NAMING +
   'Return the check names and whether they are all red. ' +
   PROCESS_FINDINGS_RULE
@@ -140,39 +128,29 @@ if (args.fresh_branch) {
   if (!branched || branched.branch !== args.fresh_branch) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: `fresh branch ${args.fresh_branch} not created` }
 }
 
-phase('Brief')
-const briefed = await agent(briefPrompt(), {
-  agentType: ouroborosAgent('architect'),
-  schema: BRIEF_SCHEMA,
-  phase: 'Brief',
-  effort: stageEffort(args.effort, 'brief'),
-})
-if (!briefed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
-
-const [planned, audited] = await parallel([
+const [designed, audited] = await parallel([
   () =>
-    agent(planPrompt(briefText(briefed.brief)), {
+    agent(designPrompt(), {
       agentType: ouroborosAgent('architect'),
-      schema: PLAN_SCHEMA,
-      phase: 'Plan',
-      effort: stageEffort(args.effort, 'planner'),
+      schema: DESIGN_SCHEMA,
+      phase: 'Brief',
+      effort: stageEffort(args.effort, 'brief'),
     }),
   () =>
-    agent(checksPrompt(briefText(briefed.brief)), {
+    agent(checksPrompt(), {
       agentType: ouroborosAgent('auditor'),
       schema: CHECKS_SCHEMA,
       phase: 'Checks',
       effort: stageEffort(args.effort, 'audit'),
     }),
 ])
-
-const plannedSlices = planned ? planned.tasks : []
+if (!designed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
 
 return {
-  brief: { common: briefed.brief.common, tasks: [...briefed.brief.tasks, ...plannedSlices] },
-  decisions: briefed.decisions,
-  phases: planned ? planned.phases : [],
+  brief: designed.brief,
+  decisions: designed.decisions,
+  phases: designed.phases,
   checks: audited ? audited.checks : [],
   red: audited ? audited.red : false,
-  findings: findingsOf(briefed, planned, audited),
+  findings: findingsOf(designed, audited),
 }
