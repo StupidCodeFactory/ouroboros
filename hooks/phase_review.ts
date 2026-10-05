@@ -126,19 +126,30 @@ export const touchesNothing = (task: PlannedTask) => task.touches !== undefined 
 
 export const isCheckpointTask = (task: PlannedTask) => /^\s*(?:P\d+\s+checkpoint|checkpoint\s+P\d+)\b/i.test(task.title)
 
-export const waveIndexes = (tasks: PlannedTask[]) => {
-  const indexes: number[] = []
-  tasks.forEach((task, position) => {
-    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (touchesNothing(task) || overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
-    indexes.push(Math.max(0, ...after))
-  })
-  return indexes
+export const inPlanOrderOf = <T>(tasks: T[], members: T[]) => [...members].sort((left, right) => tasks.indexOf(left) - tasks.indexOf(right))
+
+export const overlapGroups = <T extends PlannedTask>(tasks: T[]): T[][] => {
+  let groups: T[][] = []
+  for (const task of tasks) {
+    const joined = groups.filter(group => group.some(member => overlaps(member, task)))
+    groups = [...groups.filter(group => !joined.includes(group)), inPlanOrderOf(tasks, [...joined.flat(), task])]
+  }
+  return groups.sort((left, right) => tasks.indexOf(left[0] as T) - tasks.indexOf(right[0] as T))
 }
 
-export const taskWaves = <T extends PlannedTask>(tasks: T[]): T[][] => {
-  const indexes = waveIndexes(tasks)
-  const waveCount = Math.max(0, ...indexes.map(index => index + 1))
-  return Array.from({ length: waveCount }, (_, wave) => tasks.filter((_, position) => indexes[position] === wave))
+export const segmentsOf = <T>(chain: T[], perImplementer: number) =>
+  Array.from({ length: Math.ceil(chain.length / perImplementer) }, (_, index) => chain.slice(index * perImplementer, (index + 1) * perImplementer))
+
+export const implementerChains = <T extends PlannedTask>(tasks: T[], slots: number, perImplementer: number) => {
+  const chains: T[][] = Array.from({ length: Math.max(1, slots) }, () => [])
+  for (const group of overlapGroups(tasks.filter(task => !touchesNothing(task)))) {
+    const lightest = chains.reduce((best, chain) => (chain.length < best.length ? chain : best))
+    lightest.push(...group)
+  }
+  return {
+    chains: chains.filter(chain => chain.length > 0).map(chain => segmentsOf(inPlanOrderOf(tasks, chain), Math.max(1, perImplementer))),
+    finale: tasks.filter(touchesNothing),
+  }
 }
 
 export const tasksToRetry = <E extends { task: { id: string }; changed: boolean }>(entries: E[], merge: Merge | null): E[] =>

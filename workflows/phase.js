@@ -34,25 +34,13 @@ const FINDINGS_SCHEMA = {
   required: ['findings'],
 }
 
-const IMPLEMENT_SCHEMA = {
-  type: 'object',
-  properties: {
-    changed: { type: 'boolean' },
-    blocked: { type: 'boolean' },
-    handoff: { type: 'string' },
-    commits: { type: 'array', items: { type: 'string' } },
-    hunks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { file: { type: 'string' }, start: { type: 'number' }, end: { type: 'number' } },
-        required: ['file', 'start', 'end'],
-      },
-    },
-    evidence: { type: 'string' },
-    branch: { type: 'string' },
+const HUNKS_SCHEMA = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: { file: { type: 'string' }, start: { type: 'number' }, end: { type: 'number' } },
+    required: ['file', 'start', 'end'],
   },
-  required: ['changed', 'blocked', 'commits', 'hunks', 'evidence', 'branch', 'handoff'],
 }
 
 const MERGE_SCHEMA = {
@@ -162,7 +150,7 @@ const planReference = task => (task.line ? `Plan section: the "### Task ${task.i
 const briefText = task => {
   if (args.brief_dir) return `Architect brief: read ${args.brief_dir}/common.md and ${args.brief_dir}/${task.id}.md first.`
   if (args.brief_path) return `Architect brief: read ${args.brief_path} first.`
-  return `Architect brief:\n${args.brief}`
+  return args.brief ? `Architect brief:\n${args.brief}` : ''
 }
 
 const LONG_RUN_RULE =
@@ -171,11 +159,6 @@ const LONG_RUN_RULE =
 const COMMIT_RULE =
   '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
   '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
-
-const RESULT_INSTRUCTION =
-  '\nReturn `changed` (false only when you committed no code change, e.g. a verification-only task), `blocked` (true when you could not do the task, e.g. a tool refused or a dependency is missing; name the blocker in `evidence`), `commits` (the shas you made), ' +
-  '`hunks` (every changed line range as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output), `branch` (the branch your commits are on) ' +
-  'and `handoff` (at most 300 words for whoever fixes this task later: your decisions and why, the gotchas you hit, the exact test commands that prove the task, files you chose not to touch and why).'
 
 const needsReview = (implemented) => implemented?.changed !== false
 
@@ -253,19 +236,30 @@ const touchesNothing = (task) => task.touches !== undefined && task.touches.leng
 
 const isCheckpointTask = (task) => /^\s*(?:P\d+\s+checkpoint|checkpoint\s+P\d+)\b/i.test(task.title)
 
-const waveIndexes = (tasks) => {
-  const indexes = []
-  tasks.forEach((task, position) => {
-    const after = tasks.slice(0, position).map((earlier, earlierPosition) => (touchesNothing(task) || overlaps(earlier, task) ? (indexes[earlierPosition] ?? 0) + 1 : 0))
-    indexes.push(Math.max(0, ...after))
-  })
-  return indexes
+const inPlanOrderOf = (tasks, members) => [...members].sort((left, right) => tasks.indexOf(left) - tasks.indexOf(right))
+
+const overlapGroups = (tasks) => {
+  let groups = []
+  for (const task of tasks) {
+    const joined = groups.filter(group => group.some(member => overlaps(member, task)))
+    groups = [...groups.filter(group => !joined.includes(group)), inPlanOrderOf(tasks, [...joined.flat(), task])]
+  }
+  return groups.sort((left, right) => tasks.indexOf(left[0]) - tasks.indexOf(right[0]))
 }
 
-const taskWaves = (tasks) => {
-  const indexes = waveIndexes(tasks)
-  const waveCount = Math.max(0, ...indexes.map(index => index + 1))
-  return Array.from({ length: waveCount }, (_, wave) => tasks.filter((_, position) => indexes[position] === wave))
+const segmentsOf = (chain, perImplementer) =>
+  Array.from({ length: Math.ceil(chain.length / perImplementer) }, (_, index) => chain.slice(index * perImplementer, (index + 1) * perImplementer))
+
+const implementerChains = (tasks, slots, perImplementer) => {
+  const chains = Array.from({ length: Math.max(1, slots) }, () => [])
+  for (const group of overlapGroups(tasks.filter(task => !touchesNothing(task)))) {
+    const lightest = chains.reduce((best, chain) => (chain.length < best.length ? chain : best))
+    lightest.push(...group)
+  }
+  return {
+    chains: chains.filter(chain => chain.length > 0).map(chain => segmentsOf(inPlanOrderOf(tasks, chain), Math.max(1, perImplementer))),
+    finale: tasks.filter(touchesNothing),
+  }
 }
 
 const tasksToRetry = (entries, merge) =>
@@ -303,14 +297,6 @@ const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of
 
 const handoffPath = task => (args.eager_dir ? args.eager_dir.replace(/\/eager$/, `/handoffs/${args.milestone}-${args.phase}/${task.id}.md`) : '')
 
-const handoffFileNote = task => (handoffPath(task) ? `\nAlso write your handoff note to ${handoffPath(task)}, replacing any older one, so it survives this session.` : '')
-
-const implementPrompt = (task, isolated) =>
-  `${eagerPreamble(implementerFile(task))}${lanePrefix(task)}${taskHeading(task)}.\n${planReference(task)}\n${briefText(task)}\n${IMPLEMENT_INSTRUCTION}` +
-  `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}${handoffFileNote(task)}`
-
-const sliceText = task => (args.brief_dir ? `Brief slice: ${args.brief_dir}/${task.id}.md.\n` : '')
-
 const hunkLine = hunk => `- ${hunk.file}:${hunk.start}-${hunk.end}`
 
 const LEAN_FIX_RULE =
@@ -318,26 +304,6 @@ const LEAN_FIX_RULE =
 
 const ADDRESS_EVERY_FINDING =
   'Address every finding: fix it, or reject it only by citing a test or a code line in `evidence`; the reviewer rechecks every rejection.'
-
-const handoffText = request =>
-  `Handoff note from this task's implementer${handoffPath(request.entry.task) ? ` (also at ${handoffPath(request.entry.task)})` : ''}:\n${request.handoff || 'none was left; rebuild what you need from the diff.'}\n`
-
-const fixPrompt = (request, isolated) =>
-  `${lanePrefix(request.entry.task)}${taskHeading(request.entry.task)}: fix round.\n${planReference(request.entry.task)}\n${sliceText(request.entry.task)}` +
-  `Task diff (commits ${request.entry.commits.join(', ') || 'none'}):\n${request.entry.hunks.map(hunkLine).join('\n')}\n${handoffText(request)}${LEAN_FIX_RULE}\n` +
-  `Blocking findings:\n${JSON.stringify(request.findings)}\n${ADDRESS_EVERY_FINDING}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${RESULT_INSTRUCTION}${handoffFileNote(request.entry.task)}`
-
-const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
-
-const implement = (task, isolated) =>
-  located(implementPrompt(task, isolated), {
-    agentType: ouroborosAgent('implementer'),
-    schema: IMPLEMENT_SCHEMA,
-    phase: 'Implement',
-    label: `implement:${task.id}${isolated ? ':worktree' : ''}`,
-    effort: stageEffort(args.effort, 'implement'),
-    ...isolationOf(isolated),
-  })
 
 const mergePrompt = entries =>
   `${lanePrefix()}Merge these ${args.phase} task branches into the current branch in this order, one \`git merge --no-ff <branch>\` each:\n` +
@@ -367,7 +333,7 @@ const LANDED_SCHEMA = {
         properties: {
           id: { type: 'string' },
           commits: { type: 'array', items: { type: 'string' } },
-          hunks: IMPLEMENT_SCHEMA.properties.hunks,
+          hunks: HUNKS_SCHEMA,
           handoff: { type: 'string' },
         },
         required: ['id', 'commits', 'hunks'],
@@ -400,60 +366,164 @@ const recoverLanded = async tasks => {
   return tasks.map(task => landedEntryOf(task, found && found.tasks.find(entry => entry.id === task.id)))
 }
 
-const implementInPlace = async task => entryOf(task, await implement(task, false))
+const CHAIN_SCHEMA = {
+  type: 'object',
+  properties: {
+    branch: { type: 'string' },
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          changed: { type: 'boolean' },
+          blocked: { type: 'boolean' },
+          commits: { type: 'array', items: { type: 'string' } },
+          hunks: HUNKS_SCHEMA,
+          evidence: { type: 'string' },
+          handoff: { type: 'string' },
+        },
+        required: ['id', 'changed', 'blocked', 'commits', 'hunks', 'evidence', 'handoff'],
+      },
+    },
+  },
+  required: ['branch', 'tasks'],
+}
 
-const rebasePrompt = entry =>
-  `${eagerPreamble(implementerFile(entry.task))}${lanePrefix(entry.task)}${taskHeading(entry.task)}.\n${planReference(entry.task)}\n${briefText(entry.task)}\n` +
-  `Your work already exists on branch ${entry.branch} (commits ${entry.commits.join(', ') || 'unknown'}) but its merge conflicted with an earlier task of this wave. ` +
-  'Cherry-pick those commits onto the current branch and resolve each conflict by keeping both tasks\' intent; run this task\'s tests. ' +
-  `Implement from scratch only when the cherry-pick cannot be resolved that way (\`git cherry-pick --abort\` first).${COMMIT_RULE}${RESULT_INSTRUCTION}`
+const CHAIN_RESULT_INSTRUCTION =
+  '\nReturn `branch` (the branch your commits are on) and one entry per task in `tasks`: `id`, `changed` (false only when you committed no code change for it), ' +
+  '`blocked` (true when you could not do it, e.g. a tool refused or a dependency is missing; name the blocker in `evidence`), `commits` (its shas), ' +
+  '`hunks` (every line range it changed as { file, start, end }, file relative to the repository root, lines in the new file), `evidence` (commands run and their decisive output) ' +
+  'and `handoff` (at most 300 words for whoever works on it next: decisions and why, gotchas, the exact test commands that prove it, files left alone and why).'
 
-const rebaseInPlace = async entry =>
-  entryOf(
-    entry.task,
-    await located(rebasePrompt(entry), {
+const SEQUENCE_RULE =
+  'Do the tasks one after another in this order, each fully (red, green, its plan boxes ticked, its own commits) before the next; reuse what you learnt in earlier tasks instead of re-reading code you already know. '
+
+const lanePreambles = tasks => [...new Set(tasks.map(implementerFile))].map(eagerPreamble).join('')
+
+const handoffFilesNote = tasks =>
+  handoffPath(tasks[0]) ? `\nAlso write each task's handoff note to its file (${tasks.map(handoffPath).join(', ')}), replacing any older one, so it survives this session.` : ''
+
+const taskBlock = task => `- ${lanePrefix(task)}task ${task.id}: ${task.title}. ${planReference(task)} ${briefText(task)}`
+
+const takeOverText = previous =>
+  previous.length ? `You take over from the implementer before you on this branch; its handoff notes:\n${previous.map(note => `- task ${note.id}: ${note.handoff || 'none left'}`).join('\n')}\n` : ''
+
+const branchStart = (branchFrom, key) =>
+  branchFrom ? `First run \`git checkout -B ${args.milestone.toLowerCase()}-${args.phase.toLowerCase()}-${key} ${branchFrom}\` and work on that branch.\n` : ''
+
+const chainPrompt = (segment, previous, isolated, branchFrom, key) =>
+  `${lanePreambles(segment)}${args.milestone} ${args.phase}: implement these tasks.\n${segment.map(taskBlock).join('\n')}\n${takeOverText(previous)}${branchStart(branchFrom, key)}` +
+  `${SEQUENCE_RULE}${IMPLEMENT_INSTRUCTION}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${CHAIN_RESULT_INSTRUCTION}${handoffFilesNote(segment)}`
+
+const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
+
+const idsOf = tasks => tasks.map(task => task.id).join(',')
+
+const implementSegment = (segment, previous, isolated, branchFrom, key) =>
+  located(chainPrompt(segment, previous, isolated, branchFrom, key), {
+    agentType: ouroborosAgent('implementer'),
+    schema: CHAIN_SCHEMA,
+    phase: 'Implement',
+    label: `implement:${idsOf(segment)}${isolated ? ':worktree' : ''}`,
+    effort: stageEffort(args.effort, 'implement'),
+    ...isolationOf(isolated),
+  })
+
+const taskOutcome = (result, task) => {
+  const found = result ? result.tasks.find(entry => entry.id === task.id) : undefined
+  return found ? { ...found, branch: result.branch } : null
+}
+
+const entriesOf = (tasks, result) => tasks.map(task => entryOf(task, taskOutcome(result, task)))
+
+const notesOf = entries => entries.map(entry => ({ id: entry.task.id, handoff: entry.handoff }))
+
+const runChain = async (chain, isolated, key) => {
+  const entries = []
+  let previous = []
+  let branch = ''
+  for (const segment of chain) {
+    const result = await implementSegment(segment, previous, isolated, isolated ? branch || args.branch || '' : '', key)
+    const segmentEntries = entriesOf(segment, result)
+    entries.push(...segmentEntries)
+    previous = notesOf(segmentEntries)
+    branch = (result && result.branch) || branch
+  }
+  return { key, entries, branch }
+}
+
+const runInPlace = async (tasks, previous) => {
+  if (!tasks.length) return []
+  const entries = []
+  let notes = previous
+  for (const segment of segmentsOf(tasks, perImplementer())) {
+    const segmentEntries = entriesOf(segment, await implementSegment(segment, notes, false, '', 'in-place'))
+    entries.push(...segmentEntries)
+    notes = notesOf(segmentEntries)
+  }
+  return entries
+}
+
+const rebaseChainPrompt = ran =>
+  `${lanePreambles(ran.entries.map(entry => entry.task))}${args.milestone} ${args.phase}: these tasks already exist on branch ${ran.branch} but merging it conflicted with another implementer's work:\n` +
+  `${ran.entries.map(entry => `${taskBlock(entry.task)} Commits: ${entry.commits.join(', ') || 'none'}.`).join('\n')}\n${takeOverText(notesOf(ran.entries))}` +
+  'Cherry-pick those commits onto the current branch in order and resolve each conflict by keeping both sides\' intent; run the tasks\' tests. ' +
+  `Implement a task from scratch only when its cherry-pick cannot be resolved that way (\`git cherry-pick --abort\` first).${COMMIT_RULE}${CHAIN_RESULT_INSTRUCTION}`
+
+const rebaseChain = async ran =>
+  entriesOf(
+    ran.entries.map(entry => entry.task),
+    await located(rebaseChainPrompt(ran), {
       agentType: ouroborosAgent('implementer'),
-      schema: IMPLEMENT_SCHEMA,
+      schema: CHAIN_SCHEMA,
       phase: 'Implement',
-      label: `rebase:${entry.task.id}`,
+      label: `rebase:${idsOf(ran.entries.map(entry => entry.task))}`,
       effort: stageEffort(args.effort, 'implement'),
     }),
   )
 
-const runParallelWave = async wave => {
-  const implemented = await parallel(wave.map(task => () => implement(task, true)))
-  const isolated = implemented.map((result, position) => entryOf(wave[position], result))
-  const branches = isolated.filter(entry => entry.changed && entry.branch)
+const chainRecord = ran => ({ task: { id: ran.key }, changed: ran.entries.some(entry => entry.changed), branch: ran.branch })
+
+const mergedChains = async ranChains => {
+  const records = ranChains.map(chainRecord)
+  const branches = records.filter(record => record.changed && record.branch)
   const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
-  const retried = []
-  for (const entry of tasksToRetry(isolated, merge)) retried.push(await (entry.branch ? rebaseInPlace(entry) : implementInPlace(entry.task)))
-  const blocked = isolated.filter(entry => entry.blocked && !retried.some(retry => retry.task.id === entry.task.id))
-  if (blocked.length) log(`${args.phase}: task ${blocked.map(entry => entry.task.id).join(', ')} blocked in a worktree; running in place one at a time`)
-  for (const entry of blocked) retried.push(await implementInPlace(entry.task))
-  return isolated.map(entry => retried.find(retry => retry.task.id === entry.task.id) ?? entry)
+  const toRebase = tasksToRetry(records, merge).map(record => record.task.id)
+  const entries = []
+  for (const ran of ranChains) entries.push(...(toRebase.includes(ran.key) ? await rebaseChain(ran) : ran.entries))
+  return entries
 }
 
-const runsInPlace = wave => wave.length === 1 || Boolean(args.worktree)
-
-const inPlaceOneByOne = async (items, run) => {
-  const results = []
-  for (const item of items) results.push(await run(item))
-  return results
+const withBlockedRedone = async entries => {
+  const blocked = entries.filter(entry => entry.blocked)
+  if (!blocked.length) return entries
+  log(`${args.phase}: task ${idsOf(blocked.map(entry => entry.task))} blocked in a worktree; running in place`)
+  const redone = await runInPlace(blocked.map(entry => entry.task), notesOf(entries.filter(entry => !entry.blocked)))
+  return entries.map(entry => redone.find(retry => retry.task.id === entry.task.id) ?? entry)
 }
 
-const runWave = async wave => (runsInPlace(wave) ? inPlaceOneByOne(wave, implementInPlace) : runParallelWave(wave))
+const perImplementer = () => args.tasks_per_implementer ?? 4
+
+const canIsolate = () => !args.worktree
+
+const implementerSlots = () => (canIsolate() ? (args.implementer_slots ?? 3) : 1)
+
+const CHAIN_OF = {}
+
+const implementAll = async tasks => {
+  const plan = implementerChains(tasks, implementerSlots(), perImplementer())
+  plan.chains.forEach((chain, index) => chain.flat().forEach(task => (CHAIN_OF[task.id] = `c${index + 1}`)))
+  log(`${args.phase}: ${plan.chains.length} implementer chain(s): ${plan.chains.map(chain => chain.map(idsOf).join(' then ')).join(' | ')}${plan.finale.length ? `; then ${idsOf(plan.finale)}` : ''}`)
+  const parallelRun = plan.chains.length > 1
+  const ranChains = parallelRun
+    ? (await parallel(plan.chains.map((chain, index) => () => runChain(chain, true, `c${index + 1}`)))).filter(Boolean)
+    : [await runChain(plan.chains[0] ?? [], false, 'c1')]
+  const chained = parallelRun ? await withBlockedRedone(await mergedChains(ranChains)) : ranChains.flatMap(ran => ran.entries)
+  return [...chained, ...(await runInPlace(plan.finale, notesOf(chained)))]
+}
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
-
-const fix = (request, round, isolated) =>
-  located(fixPrompt(request, isolated), {
-    agentType: ouroborosAgent('implementer'),
-    schema: IMPLEMENT_SCHEMA,
-    phase: 'Review',
-    label: `fix:${request.entry.task.id}:r${round}${isolated ? ':worktree' : ''}`,
-    effort: stageEffort(args.effort, 'fix'),
-    ...isolationOf(isolated),
-  })
 
 const commonBrief = () => (args.brief_dir ? `Common brief: ${args.brief_dir}/common.md; each task's slice is ${args.brief_dir}/<task id>.md.\n` : '')
 
@@ -514,37 +584,59 @@ const recordFix = (entry, fixed) => {
   return fixed.hunks ?? []
 }
 
-const fixInPlace = async (request, round) => {
-  const fixed = await fix(request, round, false)
-  logFix(request.entry, round, fixed)
-  return recordFix(request.entry, fixed)
+const fixUnitBlock = request =>
+  `${taskBlock(request.entry.task)}\n  Diff (commits ${request.entry.commits.join(', ') || 'none'}):\n${request.entry.hunks.map(hunk => `  ${hunkLine(hunk)}`).join('\n')}\n` +
+  `  Handoff note: ${request.handoff || 'none was left; rebuild what you need from the diff.'}\n  Blocking findings: ${JSON.stringify(request.findings)}`
+
+const fixPrompt = (unit, isolated) =>
+  `${args.milestone} ${args.phase}: fix round for these tasks.\n${unit.requests.map(fixUnitBlock).join('\n')}\n${LEAN_FIX_RULE}\n${ADDRESS_EVERY_FINDING}` +
+  `${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${CHAIN_RESULT_INSTRUCTION}${handoffFilesNote(unit.requests.map(request => request.entry.task))}`
+
+const fix = (unit, round, isolated) =>
+  located(fixPrompt(unit, isolated), {
+    agentType: ouroborosAgent('implementer'),
+    schema: CHAIN_SCHEMA,
+    phase: 'Review',
+    label: `fix:${idsOf(unit.requests.map(request => request.entry.task))}:r${round}${isolated ? ':worktree' : ''}`,
+    effort: stageEffort(args.effort, 'fix'),
+    ...isolationOf(isolated),
+  })
+
+const applyFix = (unit, round, result) =>
+  unit.requests.flatMap(request => {
+    const fixed = taskOutcome(result, request.entry.task)
+    logFix(request.entry, round, fixed)
+    return recordFix(request.entry, fixed)
+  })
+
+const fixInPlace = async (unit, round) => applyFix(unit, round, await fix(unit, round, false))
+
+const fixUnits = requests => {
+  const units = new Map()
+  for (const request of requests) {
+    const key = CHAIN_OF[request.entry.task.id] ?? 'rest'
+    units.set(key, [...(units.get(key) ?? []), request])
+  }
+  return [...units].map(([key, grouped]) => ({ key, requests: grouped }))
 }
 
-const fixedEntry = (entry, fixed) => ({ task: entry.task, changed: isBlocked(fixed) || fixed.changed !== false, branch: (!isBlocked(fixed) && fixed.branch) || '' })
-
-const fixParallelWave = async (wave, round) => {
-  const fixed = await parallel(wave.map(request => () => fix(request, round, true)))
-  const isolated = wave.map((request, position) => fixedEntry(request.entry, fixed[position]))
-  const branches = isolated.filter(candidate => candidate.changed && candidate.branch)
+const fixParallel = async (units, round) => {
+  const results = await parallel(units.map(unit => () => fix(unit, round, true)))
+  const records = units.map((unit, position) => ({ task: { id: unit.key }, changed: Boolean(results[position]), branch: (results[position] && results[position].branch) || '' }))
+  const branches = records.filter(record => record.changed && record.branch)
   const merge = branches.length ? await mergeWave(branches) : NOTHING_MERGED
-  const retried = tasksToRetry(isolated, merge).map(candidate => candidate.task.id)
-  const merged = wave.filter(request => merge.merged.includes(request.entry.task.id))
-  merged.forEach(request => logFix(request.entry, round, fixed[wave.indexOf(request)]))
-  const hunks = merged.flatMap(request => recordFix(request.entry, fixed[wave.indexOf(request)]))
-  for (const request of wave.filter(candidate => retried.includes(candidate.entry.task.id))) hunks.push(...(await fixInPlace(request, round)))
+  const redo = tasksToRetry(records, merge).map(record => record.task.id)
+  const hunks = units.filter(unit => merge.merged.includes(unit.key)).flatMap(unit => applyFix(unit, round, results[units.indexOf(unit)]))
+  for (const unit of units.filter(candidate => redo.includes(candidate.key))) hunks.push(...(await fixInPlace(unit, round)))
   return hunks
 }
 
-const filesOf = entry => [...new Set(entry.hunks.map(hunk => hunk.file))]
-
 const fixRound = async (entries, blocking, round) => {
-  const requests = fixRequests(entries, blocking)
-  const fixHunks = []
-  for (const wave of taskWaves(requests.map(request => ({ id: request.entry.task.id, title: request.entry.task.title, touches: filesOf(request.entry) })))) {
-    const waveRequests = wave.map(planned => requests.find(request => request.entry.task.id === planned.id))
-    fixHunks.push(...(runsInPlace(waveRequests) ? (await inPlaceOneByOne(waveRequests, request => fixInPlace(request, round))).flat() : await fixParallelWave(waveRequests, round)))
-  }
-  return fixHunks
+  const units = fixUnits(fixRequests(entries, blocking))
+  if (units.length > 1 && canIsolate()) return fixParallel(units, round)
+  const hunks = []
+  for (const unit of units) hunks.push(...(await fixInPlace(unit, round)))
+  return hunks
 }
 
 const suitePrompt = entries =>
@@ -716,8 +808,7 @@ const tasks = (args.tasks ?? []).filter(task => !isCheckpointTask(task))
 const landed = (args.landed ?? []).filter(task => !isCheckpointTask(task))
 if (!tasks.length && !landed.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
 const landedEntries = await recoverLanded(landed)
-const implementedEntries = []
-for (const wave of taskWaves(tasks)) implementedEntries.push(...(await runWave(wave)))
+const implementedEntries = tasks.length ? await implementAll(tasks) : []
 const entries = inPlanOrder([...landedEntries.filter(Boolean), ...implementedEntries], [...landed, ...tasks])
 
 const blockedEntries = entries.filter(entry => entry.blocked)

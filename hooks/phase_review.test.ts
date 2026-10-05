@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointRepairs, checkpointVerdict, fixRequests, isCheckpointTask, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { implementerChains, checkpointRepairs, checkpointVerdict, fixRequests, isCheckpointTask, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -172,24 +172,6 @@ const P0_TASKS = [
 
 const idsOf = (waves: Array<Array<{ id: string }>>) => waves.map(wave => wave.map(task => task.id))
 
-test('P0 tasks touching disjoint files share a wave; one that overlaps an earlier task waits for it', () => {
-  expect(idsOf(taskWaves(P0_TASKS))).toEqual([['2', '3', '4'], ['17']])
-})
-
-test('a task that names no touched files runs alone, after everything before it', () => {
-  const unknown = { id: '5', title: 'proto messages' }
-  expect(idsOf(taskWaves([P0_TASKS[1]!, unknown, P0_TASKS[2]!]))).toEqual([['3'], ['5'], ['4']])
-})
-
-test('a chain of overlaps runs in plan order', () => {
-  const tasks = [
-    { id: 'a', title: 'a', touches: ['x.rb'] },
-    { id: 'b', title: 'b', touches: ['x.rb', 'y.rb'] },
-    { id: 'c', title: 'c', touches: ['y.rb'] },
-  ]
-  expect(idsOf(taskWaves(tasks))).toEqual([['a'], ['b'], ['c']])
-})
-
 test('every changed task the merge did not land is retried sequentially', () => {
   const entries = [
     { task: { id: '3', title: '' }, changed: true },
@@ -213,12 +195,6 @@ test('a lane glob overlaps the files and globs under it and nothing outside it',
   expect(pathsOverlap('lib/**', 'services/**')).toBe(false)
   expect(pathsOverlap('lib/**', 'spec/lib/a_spec.rb')).toBe(false)
   expect(pathsOverlap('lib/a.rb', '/repo/lib/a.rb')).toBe(true)
-})
-
-test('tasks owning different lanes share a wave, two tasks of one lane do not', () => {
-  const ruby = (id: string) => ({ id, title: id, touches: ['lib/**', 'spec/**'] })
-  const python = { id: 'p', title: 'p', touches: ['services/**'] }
-  expect(idsOf(taskWaves([ruby('a'), python, ruby('b')]))).toEqual([['a', 'p'], ['b']])
 })
 
 test('an implementer that could not work is blocked, whatever it says about changes', () => {
@@ -261,16 +237,6 @@ test('a suite failure that names no task of this phase is a follow-up, not a blo
   expect(triagePhaseFindings([orphan], PHASE_DIFFS)).toEqual({ blocking: [], followUps: [orphan] })
 })
 
-test('a task that touches no files runs after every task before it, never in the first wave', () => {
-  const tasks = [
-    { id: '62', title: 'queue', touches: ['lib/queue.rb'] },
-    { id: '63', title: 'drain', touches: ['lib/drain.rb'] },
-    { id: '47', title: 'verify the drain end to end', touches: [] },
-    { id: '64', title: 'dashboard', touches: ['services/dashboard/app.py'] },
-  ]
-  expect(idsOf(taskWaves(tasks))).toEqual([['62', '63', '64'], ['47']])
-})
-
 test('a plan task that is the phase checkpoint is recognised by its title', () => {
   expect(isCheckpointTask({ id: '48', title: 'P4 checkpoint' })).toBe(true)
   expect(isCheckpointTask({ id: '71', title: 'Checkpoint P7: full suite and phase commit' })).toBe(true)
@@ -298,4 +264,35 @@ test('a red checkpoint\'s failures go to the task that broke them, by its own cl
 test('a green or empty checkpoint needs no repair', () => {
   expect(checkpointRepairs({ committed: true, sha: 'abc', suite_green: true, evidence: 'ok' }, PHASE_DIFFS)).toEqual([])
   expect(checkpointRepairs(null, PHASE_DIFFS)).toEqual([])
+})
+
+const touching = (id: string, ...touches: string[]) => ({ id, title: id, touches })
+const chainIds = (plan: { chains: Array<Array<Array<{ id: string }>>>; finale: Array<{ id: string }> }) => ({
+  chains: plan.chains.map(chain => chain.map(segment => segment.map(task => task.id))),
+  finale: plan.finale.map(task => task.id),
+})
+
+test('tasks that share files stay with one implementer, disjoint groups get their own when there are slots', () => {
+  const tasks = [touching('a', 'x.rb'), touching('b', 'y.rb'), touching('c', 'x.rb', 'z.rb'), touching('d', 'z.rb')]
+  expect(chainIds(implementerChains(tasks, 2, 4))).toEqual({ chains: [[['a', 'c', 'd']], [['b']]], finale: [] })
+})
+
+test('with one slot every task goes to one implementer, in plan order', () => {
+  const tasks = [touching('a', 'x.rb'), touching('b', 'y.rb'), touching('c', 'x.rb')]
+  expect(chainIds(implementerChains(tasks, 1, 4))).toEqual({ chains: [[['a', 'b', 'c']]], finale: [] })
+})
+
+test('a long chain is split into implementers that each take over from the one before', () => {
+  const tasks = ['a', 'b', 'c', 'd', 'e'].map(id => touching(id, 'x.rb'))
+  expect(chainIds(implementerChains(tasks, 3, 2))).toEqual({ chains: [[['a', 'b'], ['c', 'd'], ['e']]], finale: [] })
+})
+
+test('groups are spread so no implementer waits on a much longer one', () => {
+  const tasks = [touching('a', 'x.rb'), touching('b', 'x.rb'), touching('c', 'x.rb'), touching('d', 'y.rb'), touching('e', 'z.rb')]
+  expect(chainIds(implementerChains(tasks, 2, 4))).toEqual({ chains: [[['a', 'b', 'c']], [['d', 'e']]], finale: [] })
+})
+
+test('a task that touches no files runs last, after every chain has merged', () => {
+  const tasks = [touching('a', 'x.rb'), touching('v'), touching('b', 'y.rb')]
+  expect(chainIds(implementerChains(tasks, 2, 4))).toEqual({ chains: [[['a']], [['b']]], finale: ['v'] })
 })
