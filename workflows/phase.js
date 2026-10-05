@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
   description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), merge in the default branch, checkpoint, then open the phase PR for the user to merge',
-  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Implement' }, { title: 'Sync' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
+  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Implement' }, { title: 'Sync' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -82,23 +82,6 @@ const REFRESH_SCHEMA = {
   type: 'object',
   properties: { appended: { type: 'boolean' }, landed: { type: 'array', items: { type: 'string' } } },
   required: ['appended', 'landed'],
-}
-
-const SUITE_SCHEMA = {
-  type: 'object',
-  properties: {
-    green: { type: 'boolean' },
-    failures: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { task: { type: 'string' }, file: { type: 'string' }, line: { type: 'number' }, summary: { type: 'string' } },
-        required: ['file', 'summary'],
-      },
-    },
-    evidence: { type: 'string' },
-  },
-  required: ['green', 'failures', 'evidence'],
 }
 
 const SYNC_SCHEMA = {
@@ -641,32 +624,14 @@ const fixRound = async (entries, blocking, round) => {
   return hunks
 }
 
-const suitePrompt = entries =>
-  `${eagerPreamble('auditor.md')}${args.milestone} ${args.phase} is implemented. Run the full test commands ${laneScope()} in .claude/ouroboros.json once, before review. Tasks:\n${entries.map(taskLine).join('\n')}\n` +
-  'For each failing example, name in `task` the task whose commits broke it (git log and git blame against the commits above; leave it out when no task of this phase did, e.g. an order-dependent failure that also fails on the base). ' +
-  'Return `green`, the `failures` (file, line, one-sentence summary, task) and the `evidence` (commands, exit codes, decisive output). Make no commit.' +
-  LONG_RUN_RULE
-
-const suiteFailures = async entries => {
-  const suite = await located(suitePrompt(entries), {
-    agentType: ouroborosAgent('auditor'),
-    schema: SUITE_SCHEMA,
-    phase: 'Suite',
-    effort: stageEffort(args.effort, 'checkpoint'),
-  })
-  if (!suite || suite.green) return []
-  return suite.failures.map(failure => ({ ...failure, reviewer: 'suite', source: 'suite', root_cause: 'code-bug', blocking: true }))
-}
-
-const reviewPhase = async (entries, suiteRaised) => {
+const reviewPhase = async entries => {
   const findings = []
   const followUps = []
   let blocking = []
   let fixHunks = []
   for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     if (round > 1) fixHunks = await fixRound(entries, blocking, round)
-    const reviewed = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
-    const raised = round === 1 ? [...suiteRaised, ...reviewed] : reviewed
+    const raised = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
     findings.push(...raised)
     const triaged = triagePhaseFindings(raised, diffsOf(entries))
     followUps.push(...triaged.followUps)
@@ -826,10 +791,8 @@ if (opensPullRequest()) {
   if (gap) return { status: 'escalate', phase: args.phase, tasks: entries.map(entry => taskResult(entry, NOT_REVIEWED)), follow_ups: [], review_rounds: 0, evidence: '', failing_gate: gap }
 }
 
-phase('Suite')
-const suiteRaised = reviewed.length ? await suiteFailures(reviewed) : []
 phase('Review')
-const outcome = reviewed.length ? await reviewPhase(reviewed, suiteRaised) : NOT_REVIEWED
+const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
