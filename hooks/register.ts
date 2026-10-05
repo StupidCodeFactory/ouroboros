@@ -227,8 +227,9 @@ async function readLoopState($: EngineInterface) {
 const RUNTIME_IGNORE = '.claude/ouroboros/.gitignore'
 
 async function ensureRuntimeIgnored($: EngineInterface) {
-  if (await $.fs.exists(RUNTIME_IGNORE)) return
-  await $.fs.write(RUNTIME_IGNORE, '*\n')
+  const path = await projectPath($, RUNTIME_IGNORE)
+  if (await $.fs.exists(path)) return
+  await $.fs.write(path, '*\n')
 }
 
 async function writeLoopState($: EngineInterface, state: LoopState) {
@@ -773,6 +774,7 @@ async function prepareEagerSpawn($: EngineInterface, agent: string, prompt: stri
 async function writeEagerFiles($: EngineInterface): Promise<{ deny: string } | { dir: string }> {
   const config = await readConfig($)
   const dir = await projectPath($, EAGER_DIR)
+  await ensureRuntimeIgnored($)
   for (const seat of workflowSeats(config)) {
     const eager = await eagerSkillsFor($, config, seat.role, seat.lane)
     if ('deny' in eager) return eager

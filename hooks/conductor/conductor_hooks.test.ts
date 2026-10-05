@@ -736,6 +736,16 @@ test('a retro in flight never blocks a merge in the main session', async ($, on)
   expect(reached).toEqual(['git merge origin/main'])
 })
 
+test('launching a loop workflow makes the runtime directory ignore itself before eager files and handoff notes land in it', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG })
+  mock.clock(on, { now: NOON })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-x' } }))
+
+  await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: { milestone: 'M5', phase: 'P7' } })
+
+  expect(disk.get('.claude/ouroboros/.gitignore')).toBe('*\n')
+})
+
 test('the runtime directory ignores itself, so a project never sees its results, state or briefs as untracked', async ($, on) => {
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN })
 
