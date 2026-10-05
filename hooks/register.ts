@@ -59,7 +59,7 @@ const SKILL_INCIDENT_COMMAND = {
   argumentHint: '<skill> <text>',
 }
 
-const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit'])
+const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit', 'kickoff-phase'])
 
 const agentRole = (subagentType: string) => subagentType.slice(subagentType.lastIndexOf(':') + 1)
 

@@ -32,8 +32,15 @@ const TASK_SLICES = {
   type: 'array',
   items: {
     type: 'object',
-    properties: { id: { type: 'string' }, guidance: { type: 'string' }, touches: { type: 'array', items: { type: 'string' } } },
-    required: ['id', 'guidance', 'touches'],
+    properties: {
+      id: { type: 'string' },
+      title: { type: 'string' },
+      phase: { type: 'string' },
+      lane: { type: 'string' },
+      guidance: { type: 'string' },
+      touches: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['id', 'title', 'phase', 'guidance', 'touches'],
   },
 }
 
@@ -108,7 +115,7 @@ const designPrompt = () =>
   'Prefer fewer, larger tasks: one task is one coherent change an implementer finishes in one sitting, so merge steps that touch the same files. ' +
   'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. Keep the existing parts untouched. ' +
   TEST_NAMING +
-  '`brief.tasks` holds one entry per task of this milestone, existing and added, keyed by its `### Task <id>` id, with ' +
+  '`brief.tasks` holds one entry per task of this milestone, existing and added, keyed by its `### Task <id>` id, with its `title`, its `phase` tag, its `lane` (the lane in .claude/ouroboros.json whose owned_paths hold most of its touches), ' +
   SLICE_RULE +
   'Return the brief, the decisions, the phases you tagged in order and how many tasks you added. ' +
   PROCESS_FINDINGS_RULE

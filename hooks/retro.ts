@@ -36,4 +36,4 @@ export const isRetroTrigger = (command: string, hasSucceeded: boolean) => {
 }
 
 export const isPhaseWorkflow = (input: { name?: string; scriptPath?: string }) =>
-  bareName(input.name ?? '') === 'phase' || (input.scriptPath ?? '').endsWith('workflows/phase.js')
+  ['phase', 'kickoff-phase'].includes(bareName(input.name ?? '')) || (input.scriptPath ?? '').endsWith('workflows/phase.js')

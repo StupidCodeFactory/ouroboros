@@ -145,7 +145,13 @@ const taskHeading = task => `Milestone ${args.milestone} ${args.phase}, task ${t
 
 const planReference = task => (task.line ? `Plan section: the "### Task ${task.id}" heading at line ${task.line} of the active plan.` : `Plan section: task ${task.id}.`)
 
+const inlineSlice = task => {
+  const slice = (args.brief_slices.tasks ?? []).find(entry => entry.id === task.id)
+  return slice ? `Brief for this task: ${slice.guidance} Touches: ${(slice.touches ?? []).join(', ')}.` : ''
+}
+
 const briefText = task => {
+  if (args.brief_slices) return inlineSlice(task)
   if (args.brief_dir) return `Architect brief: read ${args.brief_dir}/common.md and ${args.brief_dir}/${task.id}.md first.`
   if (args.brief_path) return `Architect brief: read ${args.brief_path} first.`
   return args.brief ? `Architect brief:\n${args.brief}` : ''
@@ -420,7 +426,7 @@ const branchStart = (branchFrom, key) =>
   branchFrom ? `First run \`git checkout -B ${args.milestone.toLowerCase()}-${args.phase.toLowerCase()}-${key} ${branchFrom}\` and work on that branch.\n` : ''
 
 const chainPrompt = (segment, previous, isolated, branchFrom, key) =>
-  `${lanePreambles(segment)}${args.milestone} ${args.phase}: implement these tasks.\n${segment.map(taskBlock).join('\n')}\n${takeOverText(previous)}${branchStart(branchFrom, key)}` +
+  `${lanePreambles(segment)}${args.brief_slices ? commonBrief() : ''}${args.milestone} ${args.phase}: implement these tasks.\n${segment.map(taskBlock).join('\n')}\n${takeOverText(previous)}${branchStart(branchFrom, key)}` +
   `${SEQUENCE_RULE}${IMPLEMENT_INSTRUCTION}${isolated ? ISOLATION_NOTE : ''}${COMMIT_RULE}${CHAIN_RESULT_INSTRUCTION}${handoffFilesNote(segment)}`
 
 const isolationOf = isolated => (isolated ? { isolation: 'worktree' } : {})
@@ -534,7 +540,10 @@ const implementAll = async tasks => {
 
 const inPlanOrder = (entries, tasks) => tasks.map(task => entries.find(entry => entry.task.id === task.id)).filter(Boolean)
 
-const commonBrief = () => (args.brief_dir ? `Common brief: ${args.brief_dir}/common.md; each task's slice is ${args.brief_dir}/<task id>.md.\n` : '')
+const commonBrief = () => {
+  if (args.brief_slices) return `Common brief:\n${args.brief_slices.common}\n`
+  return args.brief_dir ? `Common brief: ${args.brief_dir}/common.md; each task's slice is ${args.brief_dir}/<task id>.md.\n` : ''
+}
 
 const taskLine = entry => `- task ${entry.task.id} (${entry.task.title}): commits ${entry.commits.join(', ') || 'none'}`
 

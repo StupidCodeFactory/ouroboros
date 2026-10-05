@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { RETRO_PROMPT, checkpointPhaseOf, isGuardedMerge, isRetroTrigger, retroPrompt } from './retro'
+import { RETRO_PROMPT, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow, isRetroTrigger, retroPrompt } from './retro'
 
 test('a phase checkpoint commit triggers the retro', () => {
   expect(isRetroTrigger('git commit -m "phase(P0): add invoice export"', true)).toBe(true)
@@ -48,4 +48,9 @@ test('the retro prompt asks the curator to slim every eager file over the limit,
 
 test('with no oversized eager file the retro prompt is the plain one', () => {
   expect(retroPrompt([{ name: 'reviewer.md', size: 9000 }], 20000)).toBe(RETRO_PROMPT)
+})
+
+test('the shipped kickoff-then-phase workflow counts as a phase launch', () => {
+  expect(isPhaseWorkflow({ name: 'ouroboros:kickoff-phase' })).toBe(true)
+  expect(isPhaseWorkflow({ name: 'ouroboros:milestone-kickoff' })).toBe(false)
 })
