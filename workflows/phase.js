@@ -148,6 +148,7 @@ const LONG_RUN_RULE =
   ' Before you return, every background command you started has ended or been killed: a test process left running keeps consuming from the shared test queues and fails later runs.'
 
 const COMMIT_RULE =
+  '\nStage files by name, never with `git add -u` or `-A`. Agent memory (`.claude/agent-memory/`) never goes into a task or phase commit: commit it on its own with subject `chore(agent-memory): <role>`.' +
   '\nBefore you return, wait for or kill every background command you started; never leave a test process running.' +
   '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
   '\nNever bypass commit hooks (no `--no-verify` or `-n`): when a hook fails, fix what it reports, or return the task blocked with its output.' +
@@ -688,7 +689,7 @@ const blockedNote = () =>
 const checkpointPrompt = () =>
   `${eagerPreamble('auditor.md')}${lanePrefix()}${blockedNote()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `${laneScope()} in .claude/ouroboros.json. ` +
-  `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
+  `Only when every one is green, commit with subject "phase(${args.phase}): <summary>" (the plan boxes and checks it closes; never agent memory, which goes in its own chore(agent-memory) commit); otherwise make no commit. ` +
   'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output). ' +
   'When anything is red, list each failing example in `failures` (file, line, one-sentence summary, and `task` when git blame shows whose commits broke it). ' +
   'Skip every plan step marked `(needs: <resource>)`: it needs something only a person has (credentials, production data). List each in `manual_steps` as "<task>: <step> (needs: <resource>)"; it never makes the checkpoint red.' +
