@@ -276,7 +276,7 @@ async function perform($: EngineInterface, state: LoopState, launch: Launch): Pr
 async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, taskId: string | undefined) {
   const state = await readLoopState($)
   if (state.pending === undefined || state.pending.workflow !== bareName(name ?? '')) return
-  await writeLoopState($, { ...state, pending: undefined, run: { id: taskId ?? state.pending.workflow, workflow: state.pending.workflow } })
+  await writeLoopState($, { ...state, pending: undefined, run: { id: taskId ?? state.pending.workflow, workflow: state.pending.workflow, started_at: await $.clock.now() } })
 }
 
 async function settle($: EngineInterface, action: Action): Promise<{ state: LoopState; note?: string }> {
@@ -435,7 +435,9 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean)
 
 async function adopt($: EngineInterface, state: LoopState, args: string) {
   const [taskId = '', workflow = '', phase] = words(args)
-  return repaired($, state, adoptRun(state, taskId, workflow, phase))
+  const adopted = adoptRun(state, taskId, workflow, phase)
+  if ('error' in adopted || adopted.state.run === undefined) return repaired($, state, adopted)
+  return repaired($, state, { state: { ...adopted.state, run: { ...adopted.state.run, started_at: await $.clock.now() } } })
 }
 
 async function setField($: EngineInterface, state: LoopState, args: string) {
@@ -569,6 +571,13 @@ async function finishRetroOf($: EngineInterface, agentId: string) {
   if (state.run?.workflow !== 'retro' || state.run.id !== agentId) return
   const settled = await settle($, nextAction({ ...state, run: undefined }, { type: 'retro-done' }, await activePlanText($), laneOwnership(await readConfig($))))
   if (settled.note !== undefined) deliverNote($, settled)
+}
+
+const STALE_RUN_MS = 12 * 3_600_000
+
+async function isLiveWriter($: EngineInterface, run: Run) {
+  if (run.workflow === 'retro' || run.started_at === undefined) return false
+  return (await $.clock.now()) - run.started_at < STALE_RUN_MS
 }
 
 async function repositoryRoot($: EngineInterface) {
@@ -919,8 +928,8 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const run = isGuardedMerge(e.command, e.agentId) ? (await readLoopState($)).run : undefined
-    const writer = run?.workflow === 'retro' ? undefined : run
-    if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree` }
+    const writer = run !== undefined && (await isLiveWriter($, run)) ? run : undefined
+    if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree; once it has ended, /ouroboros collect <its output-file> files it and clears the marker` }
     const ran = await next(e)
     if (!isRetroTrigger(e.command, hasSucceeded(ran))) return ran
     if (await isPrematureCheckpoint($, e.command)) return ran

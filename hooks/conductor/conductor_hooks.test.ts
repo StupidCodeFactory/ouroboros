@@ -5,6 +5,7 @@ import type { On } from 'claude-code'
 const COMPOSER = { kind: 'composer' as const }
 const PRESENTATION = { isFullscreen: false, columns: 80 }
 const NOTIFICATION = { kind: 'task-notification' as const }
+const NOON = Date.UTC(2026, 9, 5, 12)
 const NO_EAGER_SKILLS = { eager_skills: [] }
 const CONFIG = JSON.stringify({
   drafts_dir: 'docs/drafts',
@@ -172,6 +173,7 @@ test('/ouroboros kickoff passes the configured per-stage effort map in the launc
 test('the Workflow call the model makes records the run and clears the pending launch', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  mock.clock(on, { now: NOON })
   on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-k' } }))
 
   await $.tool.call({ tool: 'Workflow', name: 'milestone-kickoff', args: pending.args })
@@ -220,6 +222,7 @@ const kickoffInFlight = JSON.stringify({
 test('the plugin-prefixed Workflow call the model makes records the run', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })
+  mock.clock(on, { now: NOON })
   on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wpsy5r9zt', workflowName: 'milestone-kickoff' } }))
 
   await $.tool.call({ tool: 'Workflow', name: 'ouroboros:milestone-kickoff', args: pending.args })
@@ -533,6 +536,7 @@ test('/ouroboros resume drops a kickoff and a phase that already ran and offers 
 test('/ouroboros adopt and set repair state.json and print it before and after', async ($, on) => {
   const stuck = JSON.stringify({ milestone: 'M1', phases: ['P0', 'P1'], current: null, status: 'kickoff', escalations: [], results: {}, pending: { workflow: 'milestone-kickoff', args: { milestone: 'M1' } } })
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': stuck })
+  mock.clock(on, { now: NOON })
 
   const adopted = await run($, 'adopt wr4z11mqu phase P1')
 
@@ -637,8 +641,11 @@ test('an open phase PR is checked again only after five minutes', async ($, on) 
   expect(stateOn(disk)).toMatchObject({ awaiting_merge: { phase: 'P0' }, merge_checked_at: Date.UTC(2026, 9, 3, 12) })
 })
 
+const startedAt = (state: string, at: number) => JSON.stringify({ ...JSON.parse(state), run: { ...JSON.parse(state).run, started_at: at } })
+
 test('a merge or rebase in the main session is refused while a workflow writes to the worktree', async ($, on) => {
-  worldBeneath(on, { '.claude/ouroboros/state.json': phaseInFlight })
+  worldBeneath(on, { '.claude/ouroboros/state.json': startedAt(phaseInFlight, NOON - 60_000) })
+  mock.clock(on, { now: NOON })
   const reached: string[] = []
   on('tool.call', { tool: 'Bash' }, (_, e) => {
     reached.push(e.command)
@@ -671,6 +678,33 @@ test('the curator finishing its turn ends the retro, so no stale retro run is le
   expect(stateOn(disk).run).toBeUndefined()
   expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1' })
   expect(submitted.join('\n')).toContain('Workflow name=phase')
+})
+
+test('a run marker older than twelve hours, or one never stamped, no longer blocks a merge', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': startedAt(phaseInFlight, NOON - 13 * 3_600_000) })
+  mock.clock(on, { now: NOON })
+  const reached: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    reached.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false } }
+  })
+
+  await $.tool.call({ tool: 'Bash', command: 'git merge --ff-only origin/main' })
+  disk.set('.claude/ouroboros/state.json', phaseInFlight)
+  await $.tool.call({ tool: 'Bash', command: 'git merge --ff-only origin/main' })
+
+  expect(reached).toEqual(['git merge --ff-only origin/main', 'git merge --ff-only origin/main'])
+})
+
+test('a launched workflow run is stamped with its start time', async ($, on) => {
+  const pending = { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } }
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'phase', pending }) })
+  mock.clock(on, { now: NOON })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-9', workflowName: 'phase' } }))
+
+  await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: pending.args })
+
+  expect(stateOn(disk).run).toEqual({ id: 'wf-9', workflow: 'phase', started_at: NOON })
 })
 
 test('a retro in flight never blocks a merge in the main session', async ($, on) => {
