@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
   description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), merge in the default branch, checkpoint, then open the phase PR for the user to merge',
-  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Sync' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
+  phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Implement' }, { title: 'Sync' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -88,6 +88,12 @@ const PR_SCHEMA = {
   type: 'object',
   properties: { pr_url: { type: 'string' } },
   required: ['pr_url'],
+}
+
+const REFRESH_SCHEMA = {
+  type: 'object',
+  properties: { appended: { type: 'boolean' }, landed: { type: 'array', items: { type: 'string' } } },
+  required: ['appended', 'landed'],
 }
 
 const SUITE_SCHEMA = {
@@ -680,6 +686,27 @@ if (args.fresh_branch) {
   phase('Branch')
   const branched = await startFreshBranch()
   if (!branched || branched.branch !== args.fresh_branch) return { status: 'escalate', phase: args.phase, tasks: [], follow_ups: [], evidence: '', failing_gate: `fresh branch ${args.fresh_branch} not created` }
+}
+
+const refreshPrompt = () =>
+  `${args.milestone} ${args.phase} is about to start from the brief in ${args.brief_dir}. Run \`git fetch origin\`, then list what merged into the default branch's origin tip since ${args.brief_dir}/common.md last changed ` +
+  '(git log of the origin tip after that file\'s modification time; merge subjects, PR titles, and the names their diffs add or rename). ' +
+  `When any of it changes names, APIs or tables the tasks of ${args.phase} will use (${(args.tasks ?? []).map(task => task.id).join(', ') || 'see the task slices'}), append a \`## Landed since this brief\` section to common.md with one line per change; otherwise change nothing. ` +
+  'Make no commit: the brief is runtime state. Return `appended` and the `landed` lines.'
+
+const refreshBrief = () =>
+  located(refreshPrompt(), {
+    agentType: ouroborosAgent('architect'),
+    schema: REFRESH_SCHEMA,
+    phase: 'Brief',
+    model: 'haiku',
+    effort: 'low',
+  })
+
+if (args.brief_dir && (args.tasks ?? []).length) {
+  phase('Brief')
+  const refreshed = await refreshBrief()
+  if (refreshed && refreshed.appended) log(`${args.phase}: brief refreshed with ${refreshed.landed.length} change(s) landed since it was written`)
 }
 
 phase('Implement')
