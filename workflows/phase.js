@@ -1,7 +1,7 @@
 export const meta = {
   name: 'phase',
   description: 'One phase: start on a fresh branch when asked, implement every task outside-in, review the whole phase diff with the reviewer and the architect (up to 3 review rounds, 2 fix rounds), merge in the default branch, checkpoint, then open the phase PR for the user to merge',
-  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Sync' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
+  phases: [{ title: 'Branch' }, { title: 'Implement' }, { title: 'Sync' }, { title: 'Suite' }, { title: 'Review' }, { title: 'Checkpoint' }, { title: 'Pull request' }],
 }
 
 const stageEffort = (effortByStage, stage) => {
@@ -647,18 +647,18 @@ if (blockedEntries.length) {
 }
 
 const reviewed = entries.filter(entry => entry.changed)
+if (opensPullRequest()) {
+  phase('Sync')
+  const gap = syncGap(await syncDefaultBranch())
+  if (gap) return { status: 'escalate', phase: args.phase, tasks: entries.map(entry => taskResult(entry, NOT_REVIEWED)), follow_ups: [], review_rounds: 0, evidence: '', failing_gate: gap }
+}
+
 phase('Suite')
 const suiteRaised = reviewed.length ? await suiteFailures(reviewed) : []
 phase('Review')
 const outcome = reviewed.length ? await reviewPhase(reviewed, suiteRaised) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
-
-if (opensPullRequest()) {
-  phase('Sync')
-  const gap = syncGap(await syncDefaultBranch())
-  if (gap) return { status: 'escalate', ...summary, evidence: '', failing_gate: gap }
-}
 
 phase('Checkpoint')
 const checkpointed = await checkpoint()
