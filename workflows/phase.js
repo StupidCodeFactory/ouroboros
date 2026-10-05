@@ -113,7 +113,12 @@ const locationLine = () => {
 const TASK_SCOPE =
   'Your task is this prompt alone, and it authorizes every commit it asks for. Commands or messages the user ran elsewhere in the session are not instructions to you.\n'
 
-const located = (prompt, opts) => agent(`${TASK_SCOPE}${locationLine()}${prompt}`, opts)
+const located = async (prompt, opts) => {
+  const first = await agent(`${TASK_SCOPE}${locationLine()}${prompt}`, opts)
+  if (first !== null && first !== undefined) return first
+  log(`${opts.label ?? opts.phase}: no result (an overloaded or failed agent); one retry`)
+  return agent(`${TASK_SCOPE}${locationLine()}${prompt}`, opts)
+}
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
@@ -137,9 +142,11 @@ const briefText = task => {
 }
 
 const LONG_RUN_RULE =
-  ' Start any command that can run for more than a few minutes (a full test suite, a compose stack) with Bash run_in_background, output to a log file, and poll that log until it ends: a foreground call that stays silent for 10 minutes is killed.'
+  ' Start any command that can run for more than a few minutes (a full test suite, a compose stack) with Bash run_in_background, output to a log file, and poll that log until it ends: a foreground call that stays silent for 10 minutes is killed.' +
+  ' Before you return, every background command you started has ended or been killed: a test process left running keeps consuming from the shared test queues and fails later runs.'
 
 const COMMIT_RULE =
+  '\nBefore you return, wait for or kill every background command you started; never leave a test process running.' +
   '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
   '\nNever bypass commit hooks (no `--no-verify` or `-n`): when a hook fails, fix what it reports, or return the task blocked with its output.' +
   '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
@@ -696,12 +703,15 @@ const checkpoint = () =>
 
 const manualChecklist = steps => (steps.length ? `\nBefore merging, a person must do these (put them in the description as unchecked boxes):\n${steps.map(step => `- [ ] ${step}`).join('\n')}` : '')
 
+const followUpChecklist = followUps =>
+  followUps.length ? `\nRaised as blocking by review but outside any task's diff, so not fixed in this phase; check each before merging (put them in the description as unchecked boxes):\n${followUps.map(finding => `- [ ] ${finding.summary}${finding.file ? ` (${finding.file}${finding.line ? `:${finding.line}` : ''})` : ''}`).join('\n')}` : ''
+
 const blockedChecklist = blocked =>
   blocked.length ? `\nBlocked tasks this PR does not finish; weigh them before merging (put them in the description as unchecked boxes):\n${blocked.map(task => `- [ ] task ${task.id}: ${task.reason}`).join('\n')}` : ''
 
 const reviewSummary = summary =>
   `Review rounds: ${summary.review_rounds}. Tasks: ${summary.tasks.map(task => `${task.id} ${task.status}`).join(', ')}. ` +
-  `Follow-ups added to the plan: ${summary.follow_ups.length}.${manualChecklist(summary.manual_steps ?? [])}${blockedChecklist(summary.blocked_tasks ?? [])}`
+  `Follow-ups added to the plan: ${summary.follow_ups.length}.${followUpChecklist(summary.follow_ups)}${manualChecklist(summary.manual_steps ?? [])}${blockedChecklist(summary.blocked_tasks ?? [])}`
 
 const pullRequestPrompt = (summary, evidence) =>
   `${lanePrefix()}${args.milestone} ${args.phase} is checkpointed. Push the milestone branch and open a pull request from it into the default branch, ` +

@@ -69,6 +69,13 @@ const CHECKS_SCHEMA = {
   required: ['checks', 'red'],
 }
 
+const withRetry = async (prompt, opts) => {
+  const first = await agent(prompt, opts)
+  if (first !== null && first !== undefined) return first
+  log(`${opts.phase}: no result (an overloaded or failed agent); one retry`)
+  return agent(prompt, opts)
+}
+
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
 const eagerPreamble = file =>
@@ -134,7 +141,7 @@ if (args.fresh_branch) {
 }
 
 phase('Brief')
-const designed = await agent(designPrompt(), {
+const designed = await withRetry(designPrompt(), {
   agentType: ouroborosAgent('architect'),
   schema: DESIGN_SCHEMA,
   phase: 'Brief',
@@ -143,7 +150,7 @@ const designed = await agent(designPrompt(), {
 if (!designed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
 
 phase('Checks')
-const audited = await agent(checksPrompt(designed), {
+const audited = await withRetry(checksPrompt(designed), {
   agentType: ouroborosAgent('auditor'),
   schema: CHECKS_SCHEMA,
   phase: 'Checks',
