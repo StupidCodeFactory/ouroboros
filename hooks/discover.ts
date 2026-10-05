@@ -2,7 +2,7 @@ import type { ActiveDrafts } from './drafts'
 
 export type DraftFile = { path: string; text: string }
 export type Discovery = { drafts: ActiveDrafts } | { error: string }
-export type KickoffArgs = { milestone?: string; spec?: string; plan?: string; goal: string }
+export type KickoffArgs = { milestone?: string; spec?: string; plan?: string; phase?: string; goal: string }
 
 const TASK_HEADING = /^### Task \S+?:/m
 const CHECKBOX = /^\s*- \[[ x]\] /m
@@ -12,11 +12,16 @@ const ROLE_SUFFIX = /-(design|spec|plan)$/
 
 const isMarkdown = (word: string | undefined) => word?.endsWith('.md') === true
 
+const PHASE_FLAG = /(?:^|\s)--phase\s+(P\d+)\b/
+
+const withPhase = (parsed: KickoffArgs, phase: string | undefined): KickoffArgs => (phase === undefined ? parsed : { ...parsed, phase })
+
 export const kickoffArgs = (args: string): KickoffArgs => {
-  const [milestone, second, third, ...rest] = args.split(/\s+/).filter(Boolean)
+  const phase = PHASE_FLAG.exec(args)?.[1]
+  const [milestone, second, third, ...rest] = args.replace(PHASE_FLAG, ' ').split(/\s+/).filter(Boolean)
   if (milestone === undefined) return { goal: '' }
-  if (isMarkdown(second) && isMarkdown(third)) return { milestone, spec: second, plan: third, goal: rest.join(' ') }
-  return { milestone, goal: [second, third, ...rest].filter(Boolean).join(' ') }
+  if (isMarkdown(second) && isMarkdown(third)) return withPhase({ milestone, spec: second, plan: third, goal: rest.join(' ') }, phase)
+  return withPhase({ milestone, goal: [second, third, ...rest].filter(Boolean).join(' ') }, phase)
 }
 
 const isPlan = (file: DraftFile) => TASK_HEADING.test(file.text) && CHECKBOX.test(file.text)

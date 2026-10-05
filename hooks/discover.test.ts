@@ -8,6 +8,8 @@ const plan = (milestone: string, specLine = '') =>
 test('kickoff args take explicit drafts only when both name markdown files', () => {
   expect(kickoffArgs('M1 specs/a.md plans/a.md ship it')).toEqual({ milestone: 'M1', spec: 'specs/a.md', plan: 'plans/a.md', goal: 'ship it' })
   expect(kickoffArgs('M1 ship it')).toEqual({ milestone: 'M1', goal: 'ship it' })
+  expect(kickoffArgs('M3 --phase P5 heal the merged path')).toEqual({ milestone: 'M3', phase: 'P5', goal: 'heal the merged path' })
+  expect(kickoffArgs('M3 specs/a.md plans/a.md --phase P5')).toEqual({ milestone: 'M3', spec: 'specs/a.md', plan: 'plans/a.md', phase: 'P5', goal: '' })
   expect(kickoffArgs('M1')).toEqual({ milestone: 'M1', goal: '' })
   expect(kickoffArgs('')).toEqual({ goal: '' })
 })

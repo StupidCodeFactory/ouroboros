@@ -54,6 +54,27 @@ test('/ouroboros kickoff stores the drafts and hands the milestone-kickoff launc
   expect(stateOn(disk)).toMatchObject({ milestone: 'M1', phases: ['P0', 'P1'], status: 'kickoff', drafts: { spec: 'specs/m1.md', plan: 'plans/m1.md' }, pending: { workflow: 'milestone-kickoff', args } })
 })
 
+test('/ouroboros kickoff --phase starts one later phase of a started milestone with its own brief directory', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/docs/drafts/plans/m1.md': PLAN })
+
+  const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md --phase P1')
+
+  expect(answered.text).toContain('"phase":"P1"')
+  expect(stateOn(disk)).toMatchObject({ milestone: 'M1', phases: ['P1'], kickoff_phase: 'P1', status: 'kickoff' })
+})
+
+test('a phase kickoff files its brief slices under <milestone>-<phase>', async ($, on) => {
+  const outputFile = '/tmp/tasks/phase-kickoff.output'
+  const brief = { common: 'c', tasks: [{ id: '81', guidance: 'g', touches: ['lib/a.rb'] }] }
+  const state = JSON.stringify({ ...JSON.parse(kickoffInFlight), phases: ['P1'], kickoff_phase: 'P1' })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': state, '/repo/docs/drafts/plans/m1.md': PLAN, [outputFile]: JSON.stringify({ result: { brief, decisions: [], phases: ['P1'], checks: [], red: true } }) })
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-id>wpsy5r9zt</task-id><output-file>${outputFile}</output-file>` })
+
+  expect(disk.get('.claude/ouroboros/briefs/M1-P1/81.md')).toContain('g')
+  expect(stateOn(disk)).toMatchObject({ status: 'phase', current: 'P1' })
+})
+
 test('/ouroboros kickoff under merge_policy architect stays on the current branch', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros.json': JSON.stringify({ ...JSON.parse(CONFIG), merge_policy: 'architect' }), '/repo/docs/drafts/plans/m1.md': PLAN })
 

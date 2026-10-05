@@ -49,7 +49,7 @@ const EAGER_DIR = '.claude/ouroboros/eager'
 const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -402,9 +402,13 @@ async function freshStart($: EngineInterface, state: LoopState) {
   return { fresh_branch: freshBranchName(config.branch_prefix ?? 'milestone/', state.milestone, state.phases[0] ?? 'P0') }
 }
 
+const forPhase = (state: LoopState, phase: string | undefined): LoopState => (phase === undefined ? state : { ...state, phases: [phase], kickoff_phase: phase })
+
+const briefKey = (state: LoopState) => (state.kickoff_phase === undefined ? state.milestone : `${state.milestone}-${state.kickoff_phase}`)
+
 async function kickoff($: EngineInterface, args: string) {
   const parsed = kickoffArgs(args)
-  if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [goal]'
+  if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]'
   if (!(await $.fs.exists(CONFIG_PATH))) return MISSING_CONFIG
   const discovery = await resolveDrafts($, parsed.milestone, parsed)
   if ('error' in discovery) return discovery.error
@@ -413,8 +417,9 @@ async function kickoff($: EngineInterface, args: string) {
   if (!(await $.fs.exists(planPath))) return `plan not found: ${planPath}`
   const planText = await $.fs.read(planPath)
   assertUniqueTaskIds(planText)
-  const fresh = kickoffState(parsed.milestone, discovery.drafts, planText)
-  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan, ...(await freshStart($, fresh)) } }
+  const fresh = forPhase(kickoffState(parsed.milestone, discovery.drafts, planText), parsed.phase)
+  const phaseArg = parsed.phase === undefined ? {} : { phase: parsed.phase }
+  const launch: Launch = { workflow: 'milestone-kickoff', args: { milestone: parsed.milestone, goal: parsed.goal, spec, plan, ...phaseArg, ...(await freshStart($, fresh)) } }
   const state = { ...fresh, pending: launch }
   const reconciled = reconcilePending(state, await loopEvidence($, state))
   return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
@@ -544,7 +549,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json, phaseAfter(state, resultPhase(json, state))))
   await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
-  const event = await withVerifiedCheckpoint($, await withFiledBrief($, state.milestone, loopEventOf(text, resultPath, run, state.current, json)), json)
+  const event = await withVerifiedCheckpoint($, await withFiledBrief($, briefKey(state), loopEventOf(text, resultPath, run, state.current, json)), json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }
 

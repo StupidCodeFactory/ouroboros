@@ -88,11 +88,13 @@ const draftReference = relative => `\`<drafts_dir from .claude/ouroboros.json>/$
 const TEST_NAMING =
   'Name test files, describe blocks and examples after the domain behaviour they check, never after milestone, phase or task ids or names. '
 
+const phaseScope = () => (args.phase ? `, phase ${args.phase} only (earlier phases already ran)` : '')
+
 const goalLine = () => (args.goal ? `Goal: ${args.goal}.\n` : '')
 
 const briefPrompt = () =>
   eagerPreamble('architect.md') +
-  `Milestone ${args.milestone} kickoff. ${goalLine()}` +
+  `Milestone ${args.milestone} kickoff${phaseScope()}. ${goalLine()}` +
   `Read the spec ${draftReference(args.spec)} and the plan ${draftReference(args.plan)}. ` +
   'Write the design brief for this milestone in two parts. `brief.common`: what every task shares, the forbidden list, the review gates, ' +
   'the constraints and seams, what must not change. `brief.tasks`: one entry per plan task (its `### Task <id>` id) with `guidance` ' +
@@ -104,7 +106,8 @@ const briefText = brief => [brief.common, ...brief.tasks.map(task => `Task ${tas
 
 const planPrompt = brief =>
   eagerPreamble('architect.md') +
-  `Milestone ${args.milestone}. Append \`## Part C: ${args.milestone} tasks\` to the plan ${draftReference(args.plan)} ` +
+  `Milestone ${args.milestone}${phaseScope()}. Append \`## Part C: ${args.milestone}${args.phase ? ` ${args.phase}` : ''} tasks\` to the plan ${draftReference(args.plan)} ` +
+  (args.phase ? `Every task you add belongs to phase ${args.phase}: tag each heading \`(${args.phase})\`. Earlier parts and phases of this milestone already exist; keep them untouched. ` : '') +
   'in the same format as its Part B: every task heading `### Task <id>: <title> (PN)` ends with its phase tag, every step is a `- [ ]` box. ' +
   'No task is left untagged, the milestone acceptance-checks task included: tag it with the first phase and give it only check steps; any code a check needs (a script, a helper) is its own tagged task. ' +
   'Read the highest `### Task <n>` number already in the plan and number your tasks from the next one up; never reuse an id. ' +
