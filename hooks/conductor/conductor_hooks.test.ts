@@ -16,7 +16,7 @@ const PLAN = ['### Task 1: a (P0)', '- [x] done', '### Task 2: b (P1)', '- [ ] o
 const run = ($: Parameters<TestBody>[0], args: string) =>
   $.command.run({ command: 'ouroboros', args, origin: COMPOSER, presentation: PRESENTATION })
 
-const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []) => {
+const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = [], toasts: string[] = []) => {
   const disk = new Map(Object.entries(files))
   mock.env(on, { HOME: '/home' })
   const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
@@ -27,7 +27,10 @@ const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []
     disk.set(e.path.includes('.claude/') ? e.path.slice(e.path.indexOf('.claude/')) : e.path, e.text)
     return { value: undefined }
   })
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
   on('session.receive', (_, e) => ({ text: e.text }))
   on('session.id', () => ({ value: 'main-session' }))
   on('prompt.submit', (_, e) => {
@@ -705,6 +708,19 @@ test('a launched workflow run is stamped with its start time', async ($, on) => 
   await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: pending.args })
 
   expect(stateOn(disk).run).toEqual({ id: 'wf-9', workflow: 'phase', started_at: NOON })
+})
+
+test('a launch whose test databases share a server with a run still going elsewhere is warned about, and recorded', async ($, on) => {
+  const registry = JSON.stringify([{ run: 'wf-m5', worktree: '/repo/.worktrees/m5', test_db: 'redis://127.0.0.1:6381/15', started_at: NOON - 60_000 }])
+  const toasts: string[] = []
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '/repo/.git/ouroboros/test-resources.json': registry }, [], toasts)
+  mock.clock(on, { now: NOON })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-m4' } }))
+
+  await $.tool.call({ tool: 'Workflow', scriptPath: '/tmp/phase.js', args: { milestone: 'M4', test_db: 'redis://127.0.0.1:6381/14' } })
+
+  expect(toasts.join('\n')).toContain('127.0.0.1:6381')
+  expect(JSON.parse(disk.get('/repo/.git/ouroboros/test-resources.json') ?? '[]').map((entry: { run: string }) => entry.run)).toEqual(['wf-m5', 'wf-m4'])
 })
 
 test('a retro in flight never blocks a merge in the main session', async ($, on) => {

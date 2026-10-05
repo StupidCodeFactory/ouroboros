@@ -22,6 +22,7 @@ import type { Finding } from './findings'
 import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 import type { IncidentPlaces } from './incident_log'
 import { phaseFollowUps } from './phase_review'
+import { sharedHostPorts, testDbsIn } from './test_resources'
 import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneOf, workflowSeats } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
@@ -544,6 +545,7 @@ async function workflowOutputText($: EngineInterface, notificationText: string) 
 }
 
 async function conductLoopResult($: EngineInterface, state: LoopState, run: Run, text: string) {
+  await releaseTestResources($, run.id)
   const resultPath = `${RESULTS_DIR}/${run.id}.json`
   const outputText = await workflowOutputText($, text)
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
@@ -578,6 +580,37 @@ const STALE_RUN_MS = 12 * 3_600_000
 async function isLiveWriter($: EngineInterface, run: Run) {
   if (run.workflow === 'retro' || run.started_at === undefined) return false
   return (await $.clock.now()) - run.started_at < STALE_RUN_MS
+}
+
+type TestResourceClaim = { run: string; worktree: string; test_db: string; started_at: number }
+
+async function testResourcesPath($: EngineInterface) {
+  const { stdout } = await $.process.run(GIT_COMMON_DIR)
+  return `${stdout.trim()}/ouroboros/test-resources.json`
+}
+
+async function readTestResourceClaims($: EngineInterface, path: string): Promise<TestResourceClaim[]> {
+  return (await $.fs.exists(path)) ? JSON.parse(await $.fs.read(path)) : []
+}
+
+async function claimedTestResources<R extends { result?: unknown; deny?: unknown; isError?: unknown }>($: EngineInterface, args: unknown, launched: R): Promise<R> {
+  const testDbs = testDbsIn(args)
+  if (testDbs.length === 0 || !hasSucceeded(launched)) return launched
+  const path = await testResourcesPath($)
+  const now = await $.clock.now()
+  const live = (await readTestResourceClaims($, path)).filter(claim => now - claim.started_at < STALE_RUN_MS)
+  const shared = sharedHostPorts(testDbs, live.map(claim => claim.test_db))
+  if (shared.length > 0) $.ui.toast(`ouroboros: test servers shared with another run: ${shared.join(', ')}; runs on one server can flush or race each other`)
+  const run = (launched.result as { taskId?: string } | undefined)?.taskId ?? 'workflow'
+  const worktree = await repositoryRoot($)
+  await $.fs.write(path, JSON.stringify([...live, ...testDbs.map(testDb => ({ run, worktree, test_db: testDb, started_at: now }))]))
+  return launched
+}
+
+async function releaseTestResources($: EngineInterface, runId: string) {
+  const path = await testResourcesPath($)
+  const claims = await readTestResourceClaims($, path)
+  if (claims.some(claim => claim.run === runId)) await $.fs.write(path, JSON.stringify(claims.filter(claim => claim.run !== runId)))
 }
 
 async function repositoryRoot($: EngineInterface) {
@@ -898,12 +931,12 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
     const denial = isPhaseWorkflow(e) ? await retroPendingDenial($) : undefined
     if (denial !== undefined) return denial
-    if (!isLoopWorkflow(e.name)) return next(e)
+    if (!isLoopWorkflow(e.name)) return claimedTestResources($, e.args, await next(e))
     const eager = await writeEagerFiles($)
     if ('deny' in eager) return { deny: eager.deny }
     const launched = await next({ ...e, args: withEagerDir(e.args, eager.dir) })
     if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result as { taskId?: string } | undefined)?.taskId)
-    return filedResult($, 'Workflow', e.tool_use_id, launched)
+    return filedResult($, 'Workflow', e.tool_use_id, await claimedTestResources($, e.args, launched))
   })
 
   on('tool.call', { tool: 'SendMessage' }, async ($, e, next) => {
