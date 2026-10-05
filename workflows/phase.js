@@ -351,23 +351,48 @@ const mergeWave = entries =>
 
 const NOTHING_MERGED = { merged: [], conflicted: [] }
 
-const landedPrompt = task =>
-  `${lanePrefix(task)}${taskHeading(task)} already landed on the current branch in an earlier run.\n${planReference(task)}\n` +
-  'Find its commits on this branch since it left the default branch (commit subjects and bodies, the files its plan section names, its ticked boxes). Change nothing and make no commit. ' +
-  'Return `changed` true, `blocked` false, those `commits`, every line range they changed as `hunks` ({ file, start, end }, lines in the current files), `evidence` (the git commands you ran), `branch`, and as `handoff` a short note on what the commits do. ' +
-  'When you find no commit for it, return `changed` false and say so in `evidence`.'
+const LANDED_SCHEMA = {
+  type: 'object',
+  properties: {
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          commits: { type: 'array', items: { type: 'string' } },
+          hunks: IMPLEMENT_SCHEMA.properties.hunks,
+          handoff: { type: 'string' },
+        },
+        required: ['id', 'commits', 'hunks'],
+      },
+    },
+  },
+  required: ['tasks'],
+}
 
-const recoverLanded = async task =>
-  entryOf(
-    task,
-    await located(landedPrompt(task), {
-      agentType: ouroborosAgent('implementer'),
-      schema: IMPLEMENT_SCHEMA,
-      phase: 'Implement',
-      label: `landed:${task.id}`,
-      effort: 'low',
-    }),
-  )
+const landedLine = task => `- task ${task.id} (${task.title})${handoffPath(task) ? `, handoff note ${handoffPath(task)}` : ''}`
+
+const landedPrompt = tasks =>
+  `These ${args.milestone} ${args.phase} tasks already landed on the current branch in an earlier run:\n${tasks.map(landedLine).join('\n')}\n` +
+  'For each, read its handoff note when it exists, then find its commits on this branch since it left the default branch (git log subjects and bodies, the files the note names). Change nothing and make no commit. ' +
+  'Return one entry per task: `id`, `commits`, every line range they changed as `hunks` ({ file, start, end }, lines in the current files, from git diff of those commits) and the note as `handoff`. A task with no commit gets empty `commits` and `hunks`.'
+
+const landedEntryOf = (task, found) =>
+  entryOf(task, found && found.commits.length ? { changed: true, blocked: false, commits: found.commits, hunks: found.hunks, evidence: 'landed in an earlier run', branch: '', handoff: found.handoff ?? '' } : { changed: false, blocked: false, commits: [], hunks: [], evidence: 'no commit found for this landed task', branch: '', handoff: '' })
+
+const recoverLanded = async tasks => {
+  if (!tasks.length) return []
+  const found = await located(landedPrompt(tasks), {
+    agentType: ouroborosAgent('implementer'),
+    schema: LANDED_SCHEMA,
+    phase: 'Implement',
+    label: `landed:${tasks.map(task => task.id).join(',')}`,
+    model: 'haiku',
+    effort: 'low',
+  })
+  return tasks.map(task => landedEntryOf(task, found && found.tasks.find(entry => entry.id === task.id)))
+}
 
 const implementInPlace = async task => entryOf(task, await implement(task, false))
 
@@ -663,7 +688,7 @@ if (checkpointTasks.length) log(`${args.phase}: skipping ${checkpointTasks.map(t
 const tasks = (args.tasks ?? []).filter(task => !isCheckpointTask(task))
 const landed = (args.landed ?? []).filter(task => !isCheckpointTask(task))
 if (!tasks.length && !landed.length) log(`${args.phase}: no tasks passed in args; nothing to implement`)
-const landedEntries = await parallel(landed.map(task => () => recoverLanded(task)))
+const landedEntries = await recoverLanded(landed)
 const implementedEntries = []
 for (const wave of taskWaves(tasks)) implementedEntries.push(...(await runWave(wave)))
 const entries = inPlanOrder([...landedEntries.filter(Boolean), ...implementedEntries], [...landed, ...tasks])
