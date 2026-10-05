@@ -291,7 +291,9 @@ const checkpointRepairs = (checkpoint, diffs) => {
 
 const IMPLEMENT_INSTRUCTION =
   'Implement it outside-in, red first; tick each plan box in the commit that verifies it. ' +
-  'While you work run only the tests of the files you change; the full suite runs once at the checkpoint.'
+  'While you work run only the tests of the files you change; the full suite runs once at the checkpoint. ' +
+  'Read code by the anchors the brief slice names: the project\'s code graph tools when it has them, else grep -n and line ranges; never print a whole file you only need a part of. ' +
+  'Chain an edit\'s test run and commit into one command when you can. Your test setup is in your eager file\'s Test environment section; do not rediscover it.'
 
 const ISOLATION_NOTE = '\nYou run in your own git worktree beside other tasks of this phase: commit on its branch and never merge.'
 

@@ -23,7 +23,7 @@ import { incidentLogPath, incidentRow, openIncidentCount } from './incident_log'
 import type { IncidentPlaces } from './incident_log'
 import { phaseFollowUps } from './phase_review'
 import { sharedHostPorts, testDbsIn } from './test_resources'
-import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneOf, workflowSeats } from './eager_skills/config'
+import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneEnvNotes, laneOf, workflowSeats } from './eager_skills/config'
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
 import type { InlinedSkill } from './eager_skills/inline'
@@ -778,7 +778,7 @@ async function writeEagerFiles($: EngineInterface): Promise<{ deny: string } | {
   for (const seat of workflowSeats(config)) {
     const eager = await eagerSkillsFor($, config, seat.role, seat.lane)
     if ('deny' in eager) return eager
-    await $.fs.write(`${dir}/${eagerFileName(seat)}`, eager.block)
+    await $.fs.write(`${dir}/${eagerFileName(seat)}`, eager.block + laneEnvNotes(config, seat))
   }
   return { dir }
 }
