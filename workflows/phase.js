@@ -678,12 +678,9 @@ const taskResult = (entry, outcome) => {
   return { id: entry.task.id, status: escalated ? 'escalate' : 'done', commits: entry.commits, evidence: entry.evidence, findings }
 }
 
-const touchedLanes = () => [...new Set((args.tasks ?? []).map(laneOf).filter(Boolean))]
-
-const laneScope = () => {
-  const lanes = touchedLanes()
-  return lanes.length ? `of lane${lanes.length > 1 ? 's' : ''} ${lanes.join(', ')} (the lanes this phase touched)` : 'of every lane'
-}
+const laneScope = () =>
+  'of every lane whose `owned_paths` match a file this phase changed: list the files with `git diff --name-only $(git merge-base origin/HEAD HEAD)..HEAD` and match them against each lane\'s `owned_paths`; ' +
+  'never choose lanes from task tags or by judgement, never skip a lane a changed file belongs to, and name the lanes you ran and why'
 
 const blockedNote = () =>
   blockedEntries.length ? `Task ${blockedEntries.map(entry => entry.task.id).join(', ')} stayed blocked and goes to the PR as an open item: its unticked boxes and its missing work never make the checkpoint red, and you do not try to finish it. ` : ''
