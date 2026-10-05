@@ -173,6 +173,15 @@ test('/ouroboros kickoff passes the configured per-stage effort map in the launc
   expect(stateOn(disk).pending.args.effort).toEqual(effort)
 })
 
+test('/ouroboros kickoff passes the configured per-role models in the launch args', async ($, on) => {
+  const models = { implementer: 'opus' }
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': JSON.stringify({ drafts_dir: 'docs/drafts', models }), '/repo/docs/drafts/plans/m1.md': PLAN })
+
+  await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect(stateOn(disk).pending.args.models).toEqual(models)
+})
+
 test('the Workflow call the model makes records the run and clears the pending launch', async ($, on) => {
   const pending = { workflow: 'milestone-kickoff', args: { milestone: 'M1' } }
   const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'kickoff', pending }) })

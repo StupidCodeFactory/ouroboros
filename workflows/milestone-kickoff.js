@@ -76,6 +76,8 @@ const withRetry = async (prompt, opts) => {
   return agent(prompt, opts)
 }
 
+const roleModel = role => (args.models && args.models[role] ? { model: args.models[role] } : {})
+
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
 const eagerPreamble = file =>
@@ -145,6 +147,7 @@ const designed = await withRetry(designPrompt(), {
   agentType: ouroborosAgent('architect'),
   schema: DESIGN_SCHEMA,
   phase: 'Brief',
+  ...roleModel('architect'),
   effort: stageEffort(args.effort, 'brief'),
 })
 if (!designed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
@@ -154,6 +157,7 @@ const audited = await withRetry(checksPrompt(designed), {
   agentType: ouroborosAgent('auditor'),
   schema: CHECKS_SCHEMA,
   phase: 'Checks',
+  ...roleModel('auditor'),
   effort: stageEffort(args.effort, 'audit'),
 })
 

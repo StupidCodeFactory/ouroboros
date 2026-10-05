@@ -120,6 +120,8 @@ const located = async (prompt, opts) => {
   return agent(`${TASK_SCOPE}${locationLine()}${prompt}`, opts)
 }
 
+const roleModel = role => (args.models && args.models[role] ? { model: args.models[role] } : {})
+
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
 const eagerPreamble = file =>
@@ -422,6 +424,7 @@ const implementSegment = (segment, previous, isolated, branchFrom, key) =>
     schema: CHAIN_SCHEMA,
     phase: 'Implement',
     label: `implement:${idsOf(segment)}${isolated ? ':worktree' : ''}`,
+    ...roleModel('implementer'),
     effort: stageEffort(args.effort, 'implement'),
     ...isolationOf(isolated),
   })
@@ -475,6 +478,7 @@ const rebaseChain = async ran =>
       schema: CHAIN_SCHEMA,
       phase: 'Implement',
       label: `rebase:${idsOf(ran.entries.map(entry => entry.task))}`,
+    ...roleModel('implementer'),
       effort: stageEffort(args.effort, 'implement'),
     }),
   )
@@ -547,7 +551,7 @@ const review = (reviewer, round, entries, blocking) =>
     schema: FINDINGS_SCHEMA,
     phase: 'Review',
     label: `${reviewer.agent}:r${round}`,
-    ...(round > 1 ? { model: 'sonnet', effort: 'medium' } : { effort: stageEffort(args.effort, reviewer.stage) }),
+    ...(round > 1 ? { model: 'sonnet', effort: 'medium' } : { ...roleModel(reviewer.agent), effort: stageEffort(args.effort, reviewer.stage) }),
   })
 
 const tagged = (reviewer, result) => (result ? result.findings.map(finding => ({ ...finding, reviewer: reviewer.agent })) : [])
@@ -594,6 +598,7 @@ const fix = (unit, round, isolated) =>
     schema: CHAIN_SCHEMA,
     phase: 'Review',
     label: `fix:${idsOf(unit.requests.map(request => request.entry.task))}:r${round}${isolated ? ':worktree' : ''}`,
+    ...roleModel('implementer'),
     effort: stageEffort(args.effort, 'fix'),
     ...isolationOf(isolated),
   })
@@ -698,6 +703,7 @@ const checkpoint = () =>
     schema: CHECKPOINT_SCHEMA,
     phase: 'Checkpoint',
     model: 'sonnet',
+    ...roleModel('auditor'),
     effort: stageEffort(args.effort, 'checkpoint'),
   })
 

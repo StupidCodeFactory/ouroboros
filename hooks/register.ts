@@ -267,8 +267,9 @@ const MERGING_WORKFLOWS = new Set(['phase', 'milestone-exit'])
 
 const withConfigArgs = (launch: Launch, config: OuroborosConfig): Launch => {
   const effort = config.effort === undefined ? {} : { effort: config.effort }
+  const models = config.models === undefined ? {} : { models: config.models }
   const mergePolicy = MERGING_WORKFLOWS.has(launch.workflow) ? { merge_policy: config.merge_policy ?? 'ask' } : {}
-  return { ...launch, args: { ...launch.args, ...effort, ...mergePolicy } }
+  return { ...launch, args: { ...launch.args, ...effort, ...models, ...mergePolicy } }
 }
 
 async function perform($: EngineInterface, state: LoopState, launch: Launch): Promise<{ state: LoopState; note?: string }> {

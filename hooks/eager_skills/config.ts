@@ -13,6 +13,7 @@ export type OuroborosConfig = {
   eager_skills_max_chars?: number
   drafts_dir?: string
   effort?: Partial<Record<Stage, Effort>>
+  models?: Partial<Record<'implementer' | 'reviewer' | 'architect' | 'auditor', string>>
 }
 
 export const DEFAULT_EAGER_SKILLS_MAX_CHARS = 60000
