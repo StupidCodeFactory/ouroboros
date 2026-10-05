@@ -1,6 +1,6 @@
 export const meta = {
   name: 'milestone-kickoff',
-  description: 'Milestone kickoff: a fresh branch from the default branch when asked, then at once one architect pass for the brief, decisions and phase-tagged tasks, and the auditor writing the checks red',
+  description: 'Milestone kickoff: a fresh branch from the default branch when asked, one architect pass for the brief, decisions and phase-tagged tasks, then the auditor commits the acceptance checks red against that brief',
   phases: [{ title: 'Branch' }, { title: 'Brief' }, { title: 'Checks' }],
 }
 
@@ -104,13 +104,18 @@ const designPrompt = () =>
   'Return the brief, the decisions, the phases you tagged in order and how many tasks you added. ' +
   PROCESS_FINDINGS_RULE
 
-const checksPrompt = () =>
+const contractText = designed =>
+  [designed.brief.common, ...designed.brief.tasks.map(task => `Task ${task.id}: ${task.guidance} Touches: ${task.touches.join(', ')}`)].join('\n')
+
+const checksPrompt = designed =>
   eagerPreamble('auditor.md') +
-  `Milestone ${args.milestone}${phaseScope()}. From the spec ${draftReference(args.spec)}, ` +
-  'write the milestone acceptance checks as the project\'s check commands, run them, and confirm each one is red before any implementation. ' +
+  `Milestone ${args.milestone}${phaseScope()}. ${goalLine()}From the spec ${draftReference(args.spec)} and the architect's brief below, ` +
+  'write the milestone acceptance checks as the project\'s check commands, against the names, modules and commands the brief commits to (never invent other ones), and cover everything the goal names. ' +
+  'Run them, confirm each one is red before any implementation, and commit them on the current branch with subject `test(<milestone>): acceptance checks, red`. ' +
   TEST_NAMING +
-  'Return the check names and whether they are all red. ' +
-  PROCESS_FINDINGS_RULE
+  'Return the check names (the committed file paths) and whether they are all red. ' +
+  PROCESS_FINDINGS_RULE +
+  `\nArchitect brief:\n${contractText(designed)}`
 
 const freshBranchPrompt = () =>
   `Milestone ${args.milestone} starts on a fresh branch. Run \`git fetch origin\`, then create and switch to \`${args.fresh_branch}\` from the default branch's origin tip. ` +
@@ -128,26 +133,27 @@ if (args.fresh_branch) {
   if (!branched || branched.branch !== args.fresh_branch) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: `fresh branch ${args.fresh_branch} not created` }
 }
 
-const [designed, audited] = await parallel([
-  () =>
-    agent(designPrompt(), {
-      agentType: ouroborosAgent('architect'),
-      schema: DESIGN_SCHEMA,
-      phase: 'Brief',
-      effort: stageEffort(args.effort, 'brief'),
-    }),
-  () =>
-    agent(checksPrompt(), {
-      agentType: ouroborosAgent('auditor'),
-      schema: CHECKS_SCHEMA,
-      phase: 'Checks',
-      effort: stageEffort(args.effort, 'audit'),
-    }),
-])
+phase('Brief')
+const designed = await agent(designPrompt(), {
+  agentType: ouroborosAgent('architect'),
+  schema: DESIGN_SCHEMA,
+  phase: 'Brief',
+  effort: stageEffort(args.effort, 'brief'),
+})
 if (!designed) return { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
 
+phase('Checks')
+const audited = await agent(checksPrompt(designed), {
+  agentType: ouroborosAgent('auditor'),
+  schema: CHECKS_SCHEMA,
+  phase: 'Checks',
+  effort: stageEffort(args.effort, 'audit'),
+})
+
+const checksLine = audited && audited.checks.length ? `\n\nAcceptance checks, committed red at kickoff; the tasks make them green and never treat them as stray drafts:\n${audited.checks.map(check => `- ${check}`).join('\n')}\n` : ''
+
 return {
-  brief: designed.brief,
+  brief: { ...designed.brief, common: `${designed.brief.common}${checksLine}` },
   decisions: designed.decisions,
   phases: designed.phases,
   checks: audited ? audited.checks : [],
