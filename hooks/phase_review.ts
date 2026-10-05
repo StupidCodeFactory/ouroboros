@@ -30,11 +30,13 @@ export const reviewersOwningEachFinding = <R extends Reviewer>(reviewers: R[], b
 export const touchesOtherFiles = (fix: Hunk[], blocking: ReviewFinding[]) =>
   fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
 
-export const reviewersForRound = <R extends Reviewer>(round: number, maxRounds: number, reviewers: R[], previousBlocking: ReviewFinding[], fix: Hunk[]): R[] => {
-  if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
-  if (touchesOtherFiles(fix, previousBlocking)) return reviewers
+export const reviewersForRound = <R extends Reviewer>(round: number, reviewers: R[], previousBlocking: ReviewFinding[], fix: Hunk[]): R[] => {
+  if (round === 1 || previousBlocking.length === 0) return reviewers
+  const correctness = reviewers.slice(0, 1)
   const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
-  return owners.length === 0 ? reviewers : owners
+  const wanted = touchesOtherFiles(fix, previousBlocking) ? [...correctness, ...owners] : owners
+  const chosen = reviewers.filter(reviewer => wanted.includes(reviewer))
+  return chosen.length === 0 ? correctness : chosen
 }
 
 export const isInDiff = (finding: ReviewFinding, diff: Hunk[]) =>

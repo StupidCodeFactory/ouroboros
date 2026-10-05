@@ -46,37 +46,38 @@ const SINGLETON_FINDING = {
 const agentsOf = (reviewers: Array<{ agent: string }>) => reviewers.map(reviewer => reviewer.agent)
 
 test('round one runs every reviewer', () => {
-  expect(agentsOf(reviewersForRound(1, 3, REVIEWERS, [], []))).toEqual(['reviewer', 'architect', 'auditor'])
+  expect(agentsOf(reviewersForRound(1, REVIEWERS, [], []))).toEqual(['reviewer', 'architect', 'auditor'])
 })
 
 test('a middle round re-runs only the reviewers whose finding blocked, when the fix stays in their files', () => {
   const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
-  expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['architect'])
+  expect(agentsOf(reviewersForRound(2, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['architect'])
 })
 
 test('a line three reviewers flagged is re-checked by one of them, not paid for three times', () => {
   const sameLine = ['reviewer', 'architect', 'auditor'].map(reviewer => ({ ...SINGLETON_FINDING, reviewer }))
   const fix = [{ file: '/repo/lib/shop/gap_source_planner.rb', start: 19, end: 19 }]
-  expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, sameLine, fix))).toEqual(['reviewer'])
+  expect(agentsOf(reviewersForRound(2, REVIEWERS, sameLine, fix))).toEqual(['reviewer'])
 })
 
-test('a fix that touches a file outside the previous findings brings every reviewer back', () => {
+test('a fix that touches a file outside the previous findings brings the correctness reviewer back, not every seat', () => {
   const fix = [
     { file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 },
     { file: 'lib/shop/backfill/dashboard_client.rb', start: 3, end: 9 },
   ]
-  expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['reviewer', 'architect', 'auditor'])
+  expect(agentsOf(reviewersForRound(2, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['reviewer', 'architect'])
+  expect(agentsOf(reviewersForRound(2, REVIEWERS, [{ ...SINGLETON_FINDING, reviewer: 'reviewer' }], fix))).toEqual(['reviewer'])
 })
 
-test('the final round runs every reviewer', () => {
+test('the last round rechecks only the owners too; the architect returns only for its own findings', () => {
   const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
-  expect(agentsOf(reviewersForRound(3, 3, REVIEWERS, [SINGLETON_FINDING], fix))).toEqual(['reviewer', 'architect', 'auditor'])
+  expect(agentsOf(reviewersForRound(3, REVIEWERS, [{ ...SINGLETON_FINDING, reviewer: 'reviewer' }], fix))).toEqual(['reviewer'])
 })
 
-test('blocking findings nobody owns bring every reviewer back rather than none', () => {
+test('blocking findings nobody owns bring the correctness reviewer back', () => {
   const unowned = [{ ...SINGLETON_FINDING, reviewer: undefined }]
   const fix = [{ file: 'lib/shop/gap_source_planner.rb', start: 15, end: 22 }]
-  expect(agentsOf(reviewersForRound(2, 3, REVIEWERS, unowned, fix))).toEqual(['reviewer', 'architect', 'auditor'])
+  expect(agentsOf(reviewersForRound(2, REVIEWERS, unowned, fix))).toEqual(['reviewer'])
 })
 
 const TASK_3_DIFF = [

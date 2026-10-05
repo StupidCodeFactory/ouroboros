@@ -167,11 +167,13 @@ const reviewersOwningEachFinding = (reviewers, blocking) => {
 
 const touchesOtherFiles = (fix, blocking) => fix.some(hunk => !blocking.some(finding => finding.file !== undefined && samePath(hunk.file, finding.file)))
 
-const reviewersForRound = (round, maxRounds, reviewers, previousBlocking, fix) => {
-  if (round === 1 || round === maxRounds || previousBlocking.length === 0) return reviewers
-  if (touchesOtherFiles(fix, previousBlocking)) return reviewers
+const reviewersForRound = (round, reviewers, previousBlocking, fix) => {
+  if (round === 1 || previousBlocking.length === 0) return reviewers
+  const correctness = reviewers.slice(0, 1)
   const owners = reviewersOwningEachFinding(reviewers, previousBlocking)
-  return owners.length === 0 ? reviewers : owners
+  const wanted = touchesOtherFiles(fix, previousBlocking) ? [...correctness, ...owners] : owners
+  const chosen = reviewers.filter(reviewer => wanted.includes(reviewer))
+  return chosen.length === 0 ? correctness : chosen
 }
 
 const isInDiff = (finding, diff) =>
@@ -536,7 +538,7 @@ const review = (reviewer, round, entries, blocking) =>
     schema: FINDINGS_SCHEMA,
     phase: 'Review',
     label: `${reviewer.agent}:r${round}`,
-    effort: stageEffort(args.effort, reviewer.stage),
+    ...(round > 1 ? { model: 'sonnet', effort: 'medium' } : { effort: stageEffort(args.effort, reviewer.stage) }),
   })
 
 const tagged = (reviewer, result) => (result ? result.findings.map(finding => ({ ...finding, reviewer: reviewer.agent })) : [])
@@ -631,7 +633,7 @@ const reviewPhase = async entries => {
   let fixHunks = []
   for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     if (round > 1) fixHunks = await fixRound(entries, blocking, round)
-    const raised = await reviewRound(reviewersForRound(round, MAX_REVIEW_ROUNDS, REVIEWERS, blocking, fixHunks), round, entries, blocking)
+    const raised = await reviewRound(reviewersForRound(round, REVIEWERS, blocking, fixHunks), round, entries, blocking)
     findings.push(...raised)
     const triaged = triagePhaseFindings(raised, diffsOf(entries))
     followUps.push(...triaged.followUps)
@@ -683,6 +685,7 @@ const checkpoint = () =>
     agentType: ouroborosAgent('auditor'),
     schema: CHECKPOINT_SCHEMA,
     phase: 'Checkpoint',
+    model: 'sonnet',
     effort: stageEffort(args.effort, 'checkpoint'),
   })
 
