@@ -606,7 +606,7 @@ const startFreshBranch = () =>
 const opensPullRequest = () => args.merge_policy !== 'architect'
 
 const syncPrompt = () =>
-  `${args.milestone} ${args.phase} is reviewed. Run \`git fetch origin\` and merge the default branch's origin tip into the current branch with \`git merge --no-edit\`. ` +
+  `${args.milestone} ${args.phase} is implemented. Run \`git fetch origin\` and merge the default branch's origin tip into the current branch with \`git merge --no-edit\`. ` +
   'When it conflicts, run `git merge --abort`, never resolve it by hand, and return `synced` false with the `conflicted_files`. Otherwise return `synced` true and no files.'
 
 const syncDefaultBranch = () =>
