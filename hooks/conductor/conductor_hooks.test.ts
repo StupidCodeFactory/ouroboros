@@ -723,6 +723,66 @@ test('a launch whose test databases share a server with a run still going elsewh
   expect(JSON.parse(disk.get('/repo/.git/ouroboros/test-resources.json') ?? '[]').map((entry: { run: string }) => entry.run)).toEqual(['wf-m5', 'wf-m4'])
 })
 
+const liveRun = (startedAt: number) =>
+  JSON.stringify({ ...JSON.parse(phaseInFlight), run: { id: 'wf-1', workflow: 'phase', started_at: startedAt, run_id: 'wf_abc-123', script_path: '/s/phase-wf_abc-123.js' } })
+
+test('a second launch of a loop workflow is refused while one is live, with the exact resume call', async ($, on) => {
+  worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': liveRun(NOON - 60_000) })
+  mock.clock(on, { now: NOON })
+  const reached: string[] = []
+  on('tool.call', { tool: 'Workflow' }, () => {
+    reached.push('launched')
+    return { result: { status: 'async_launched' as const, taskId: 'wf-2' } }
+  })
+
+  const relaunched = await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: { milestone: 'M1', phase: 'P0' } })
+  const copied = await $.tool.call({ tool: 'Workflow', scriptPath: '/tmp/my-phase.js', args: { milestone: 'M1', phase: 'P0' } })
+
+  expect(relaunched.deny).toContain('phase (wf-1) is still running')
+  expect(relaunched.deny).toContain('resumeFromRunId: "wf_abc-123"')
+  expect(relaunched.deny).toContain('scriptPath: "/s/phase-wf_abc-123.js"')
+  expect(copied.deny).toContain('still running')
+  expect(reached).toEqual([])
+})
+
+test('resuming the live run is allowed and the conductor follows its new task id', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': liveRun(NOON - 60_000) })
+  mock.clock(on, { now: NOON })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-9', runId: 'wf_abc-123' } }))
+
+  await $.tool.call({ tool: 'Workflow', scriptPath: '/s/phase-wf_abc-123.js', resumeFromRunId: 'wf_abc-123' })
+
+  expect(stateOn(disk).run).toMatchObject({ id: 'wf-9', workflow: 'phase', run_id: 'wf_abc-123' })
+})
+
+test('a plugin update in the session is refused while a run is live, and allowed once it is stale', async ($, on) => {
+  const disk = worldBeneath(on, { '.claude/ouroboros/state.json': liveRun(NOON - 60_000) })
+  mock.clock(on, { now: NOON })
+  const reached: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_, e) => {
+    reached.push(e.command)
+    return { result: { stdout: '', stderr: '', interrupted: false } }
+  })
+
+  const refused = await $.tool.call({ tool: 'Bash', command: 'claude plugin update ouroboros@ouroboros' })
+  disk.set('.claude/ouroboros/state.json', liveRun(NOON - 13 * 3_600_000))
+  await $.tool.call({ tool: 'Bash', command: 'claude plugin update ouroboros@ouroboros' })
+
+  expect(refused.deny).toContain('still running')
+  expect(reached).toEqual(['claude plugin update ouroboros@ouroboros'])
+})
+
+test('a launch records the run id and script path it can be resumed from', async ($, on) => {
+  const pending = { workflow: 'phase', args: { milestone: 'M1', phase: 'P1' } }
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': JSON.stringify({ milestone: 'M1', status: 'phase', pending }) })
+  mock.clock(on, { now: NOON })
+  on('tool.call', { tool: 'Workflow' }, () => ({ result: { status: 'async_launched' as const, taskId: 'wf-9', runId: 'wf_x', scriptPath: '/s/phase-wf_x.js' } }))
+
+  await $.tool.call({ tool: 'Workflow', name: 'ouroboros:phase', args: pending.args })
+
+  expect(stateOn(disk).run).toEqual({ id: 'wf-9', workflow: 'phase', started_at: NOON, run_id: 'wf_x', script_path: '/s/phase-wf_x.js' })
+})
+
 test('a retro in flight never blocks a merge in the main session', async ($, on) => {
   worldBeneath(on, { '.claude/ouroboros/state.json': retroRunning })
   const reached: string[] = []

@@ -3,7 +3,7 @@ import { planPhases } from '../drafts'
 
 export type LoopStatus = 'idle' | 'kickoff' | 'phase' | 'retro' | 'exit' | 'paused' | 'escalated'
 export type Launch = { workflow: string; args: object }
-export type Run = { id: string; workflow: string; started_at?: number }
+export type Run = { id: string; workflow: string; started_at?: number; run_id?: string; script_path?: string }
 export type Escalation = { kind: 'task-red' | 'check-red' | 'gate-refused'; phase: string; summary: string; result_path: string }
 export type LoopState = {
   milestone: string

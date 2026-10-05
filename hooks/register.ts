@@ -8,7 +8,7 @@ import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
 import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workflowCall } from './conductor/header'
-import { kickoffState, parseState, serializeState } from './conductor/state'
+import { IDLE_STATE, kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
 import type { Launch, LoopState, Run } from './conductor/state'
 import { reconcilePending } from './conductor/reconcile'
@@ -64,6 +64,8 @@ const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit'])
 const agentRole = (subagentType: string) => subagentType.slice(subagentType.lastIndexOf(':') + 1)
 
 const isLoopAgent = ($: EngineInterface, subagentType: string | undefined) => (subagentType ?? '').startsWith(`${$.plugin.name}:`)
+
+const isPluginChange = (command: string) => /\bclaude\s+plugin\s+(update|install|uninstall)\b/.test(command)
 
 const isLoopWorkflow = (name: string | undefined) => LOOP_WORKFLOWS.has(bareName(name ?? ''))
 
@@ -275,10 +277,40 @@ async function perform($: EngineInterface, state: LoopState, launch: Launch): Pr
   return { state: { ...state, pending, run: undefined }, note: launchNote(pending) }
 }
 
-async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, taskId: string | undefined) {
+type Launched = { taskId?: string; runId?: string; scriptPath?: string }
+
+const resumeHandle = (launched: Launched) => ({
+  ...(launched.runId === undefined ? {} : { run_id: launched.runId }),
+  ...(launched.scriptPath === undefined ? {} : { script_path: launched.scriptPath }),
+})
+
+async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, launched: Launched) {
   const state = await readLoopState($)
   if (state.pending === undefined || state.pending.workflow !== bareName(name ?? '')) return
-  await writeLoopState($, { ...state, pending: undefined, run: { id: taskId ?? state.pending.workflow, workflow: state.pending.workflow, started_at: await $.clock.now() } })
+  const run = { id: launched.taskId ?? state.pending.workflow, workflow: state.pending.workflow, started_at: await $.clock.now(), ...resumeHandle(launched) }
+  await writeLoopState($, { ...state, pending: undefined, run })
+}
+
+async function followResumedRun($: EngineInterface, resumedRunId: string, launched: Launched) {
+  const state = await readLoopState($)
+  if (state.run === undefined || state.run.run_id !== resumedRunId || launched.taskId === undefined) return
+  await writeLoopState($, { ...state, run: { ...state.run, id: launched.taskId, started_at: await $.clock.now() } })
+}
+
+const launchesLoopWork = (input: { name?: string; scriptPath?: string; args?: unknown }) => {
+  const args = (input.args ?? {}) as { milestone?: unknown; phase?: unknown }
+  return isLoopWorkflow(input.name) || isPhaseWorkflow(input) || (typeof args.milestone === 'string' && args.milestone !== '')
+}
+
+const resumeCall = (run: Run) =>
+  run.run_id === undefined ? 'find its run id with /workflows and call Workflow with resumeFromRunId' : `Workflow({ scriptPath: "${run.script_path ?? '<its script path>'}", resumeFromRunId: "${run.run_id}" })`
+
+const stillRunning = (run: Run) =>
+  `${run.workflow} (${run.id}) is still running; wait for its result. If it died, resume it instead of starting over: ${resumeCall(run)}`
+
+async function liveRunOf($: EngineInterface) {
+  const run = (await readLoopState($).catch(() => IDLE_STATE)).run
+  return run !== undefined && (await isLiveWriter($, run)) ? run : undefined
 }
 
 async function settle($: EngineInterface, action: Action): Promise<{ state: LoopState; note?: string }> {
@@ -931,13 +963,20 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Workflow' }, async ($, e, next) => {
+    if (e.agentId === undefined && e.resumeFromRunId !== undefined) {
+      const resumed = await next(e)
+      if (hasSucceeded(resumed)) await followResumedRun($, e.resumeFromRunId, (resumed.result ?? {}) as Launched)
+      return resumed
+    }
+    const live = e.agentId === undefined && launchesLoopWork(e) ? await liveRunOf($) : undefined
+    if (live !== undefined) return { deny: stillRunning(live) }
     const denial = isPhaseWorkflow(e) ? await retroPendingDenial($) : undefined
     if (denial !== undefined) return denial
     if (!isLoopWorkflow(e.name)) return claimedTestResources($, e.args, await next(e))
     const eager = await writeEagerFiles($)
     if ('deny' in eager) return { deny: eager.deny }
     const launched = await next({ ...e, args: withEagerDir(e.args, eager.dir) })
-    if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result as { taskId?: string } | undefined)?.taskId)
+    if (hasSucceeded(launched)) await recordLaunchedWorkflow($, e.name, (launched.result ?? {}) as Launched)
     return filedResult($, 'Workflow', e.tool_use_id, await claimedTestResources($, e.args, launched))
   })
 
@@ -962,6 +1001,8 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const updating = e.agentId === undefined && isPluginChange(e.command) ? await liveRunOf($) : undefined
+    if (updating !== undefined) return { deny: `no plugin update now: ${stillRunning(updating)}` }
     const run = isGuardedMerge(e.command, e.agentId) ? (await readLoopState($)).run : undefined
     const writer = run !== undefined && (await isLiveWriter($, run)) ? run : undefined
     if (writer !== undefined) return { deny: `no merge or rebase now: ${writer.workflow} (${writer.id}) is writing to this worktree; once it has ended, /ouroboros collect <its output-file> files it and clears the marker` }
