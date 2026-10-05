@@ -40,6 +40,16 @@ export const embeddedJson = (text: string): Record<string, unknown> | undefined 
   return undefined
 }
 
+type BlockedTask = { id?: unknown; reason?: unknown }
+
+const blockedLine = (task: BlockedTask) => `${String(task.id)}: ${typeof task.reason === 'string' ? task.reason : 'blocked'}`
+
+const blockedOf = (json: Record<string, unknown> | undefined) =>
+  Array.isArray(json?.blocked_tasks) && json.blocked_tasks.length > 0 ? { blocked: (json.blocked_tasks as BlockedTask[]).map(blockedLine) } : {}
+
+export const blockedTaskIds = (json: Record<string, unknown> | undefined) =>
+  Array.isArray(json?.blocked_tasks) ? (json.blocked_tasks as BlockedTask[]).flatMap(task => (typeof task.id === 'string' ? [task.id] : [])) : []
+
 const phaseEvent = (json: Record<string, unknown> | undefined, phase: string | null, resultPath: string): LoopEvent => ({
   type: 'phase-result',
   status: json?.status === 'checkpointed' ? 'checkpointed' : 'escalate',
@@ -48,6 +58,7 @@ const phaseEvent = (json: Record<string, unknown> | undefined, phase: string | n
   ...(typeof json?.failing_gate === 'string' && json.failing_gate !== '' ? { failing_gate: json.failing_gate } : {}),
   ...(typeof json?.pr_url === 'string' && json.pr_url !== '' && json.merged !== true ? { pr_url: json.pr_url } : {}),
   ...(typeof json?.checkpoint_sha === 'string' && json.checkpoint_sha !== '' ? { checkpoint_sha: json.checkpoint_sha } : {}),
+  ...blockedOf(json),
 })
 
 const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {

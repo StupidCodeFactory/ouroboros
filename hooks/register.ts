@@ -6,7 +6,7 @@ import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
-import { bareName, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
+import { bareName, blockedTaskIds, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workflowCall } from './conductor/header'
 import { IDLE_STATE, kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
@@ -551,7 +551,8 @@ async function openTasksOf($: EngineInterface, phase: string, json: Record<strin
   const planText = await activePlanText($)
   if (planText === undefined) return []
   const ran = ranTaskIds(json)
-  return phaseTasks(planText, phase).filter(task => ran.includes(task.id) && task.unchecked > 0).map(task => task.id)
+  const blocked = blockedTaskIds(json)
+  return phaseTasks(planText, phase).filter(task => ran.includes(task.id) && !blocked.includes(task.id) && task.unchecked > 0).map(task => task.id)
 }
 
 async function withVerifiedCheckpoint($: EngineInterface, event: LoopEvent, json: Record<string, unknown> | undefined) {

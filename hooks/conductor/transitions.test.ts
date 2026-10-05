@@ -161,3 +161,9 @@ test('a kickoff warns about open tasks with no phase tag, since no phase will ev
   expect(launch?.workflow).toBe('phase')
   expect(notify).toBe('M1: task 32 has open boxes but no phase tag, so no phase will run it; tag it (PN) in the plan')
 })
+
+test('a phase PR opened with blocked tasks says which tasks the person merging must weigh', () => {
+  const reported = nextAction({ ...base }, { type: 'phase-result', status: 'checkpointed', phase: 'P0', result_path: 'r0.json', pr_url: 'https://github.com/o/r/pull/860', blocked: ['88: needs the drive key'] })
+  expect(reported.state).toMatchObject({ status: 'retro', awaiting_merge: { phase: 'P0' } })
+  expect(reported.notify).toBe('M1 P0: pull request https://github.com/o/r/pull/860 is open for your review and merge; still blocked, listed on the PR: 88: needs the drive key')
+})

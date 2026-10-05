@@ -379,6 +379,19 @@ test('/ouroboros collect of a run that is not in flight files only its incidents
   expect(disk.get('.claude/ouroboros/state.json')).toBe(phaseInFlight)
 })
 
+test('the boxes of a task the PR lists as blocked do not fail the checkpoint check', async ($, on) => {
+  const plan = ['### Task 83: rollup (P0)', '- [x] a', '### Task 88: evidence (P0)', '- [ ] run it against prod'].join('\n')
+  const outputFile = '/tmp/tasks/blocked.output'
+  const output = JSON.stringify({ result: { status: 'checkpointed', phase: 'P0', pr_url: 'https://github.com/o/r/pull/860', blocked_tasks: [{ id: '88', reason: 'needs the drive key' }], tasks: [{ id: '83', status: 'done' }, { id: '88', status: 'escalate' }] } })
+  const disk = worldBeneath(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': phaseInFlight, '/repo/docs/drafts/plans/m1.md': plan, [outputFile]: output })
+  on('agent.spawn', () => ({ model: 'fable', agentId: 'curator-1' }))
+  mock.clock(on, { now: NOON })
+
+  await $.session.receive({ origin: NOTIFICATION, text: `<task-id>wf-1</task-id><output-file>${outputFile}</output-file>` })
+
+  expect(stateOn(disk)).toMatchObject({ status: 'retro', awaiting_merge: { phase: 'P0', pr_url: 'https://github.com/o/r/pull/860' } })
+})
+
 test('follow-ups a phase raised outside a task diff are appended to the plan as unchecked boxes', async ($, on) => {
   const outputFile = '/tmp/tasks/wf-1.output'
   const followUp = { reviewer: 'reviewer', file: 'lib/shop/backfill/runner.rb', line: 163, summary: 'Untouched callers still reach the singleton through .instance.', blocking: true }

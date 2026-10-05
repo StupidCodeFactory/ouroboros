@@ -673,8 +673,11 @@ const laneScope = () => {
   return lanes.length ? `of lane${lanes.length > 1 ? 's' : ''} ${lanes.join(', ')} (the lanes this phase touched)` : 'of every lane'
 }
 
+const blockedNote = () =>
+  blockedEntries.length ? `Task ${blockedEntries.map(entry => entry.task.id).join(', ')} stayed blocked and goes to the PR as an open item: its unticked boxes and its missing work never make the checkpoint red, and you do not try to finish it. ` : ''
+
 const checkpointPrompt = () =>
-  `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
+  `${eagerPreamble('auditor.md')}${lanePrefix()}${blockedNote()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
   'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output). ' +
@@ -693,9 +696,12 @@ const checkpoint = () =>
 
 const manualChecklist = steps => (steps.length ? `\nBefore merging, a person must do these (put them in the description as unchecked boxes):\n${steps.map(step => `- [ ] ${step}`).join('\n')}` : '')
 
+const blockedChecklist = blocked =>
+  blocked.length ? `\nBlocked tasks this PR does not finish; weigh them before merging (put them in the description as unchecked boxes):\n${blocked.map(task => `- [ ] task ${task.id}: ${task.reason}`).join('\n')}` : ''
+
 const reviewSummary = summary =>
   `Review rounds: ${summary.review_rounds}. Tasks: ${summary.tasks.map(task => `${task.id} ${task.status}`).join(', ')}. ` +
-  `Follow-ups added to the plan: ${summary.follow_ups.length}.${manualChecklist(summary.manual_steps ?? [])}`
+  `Follow-ups added to the plan: ${summary.follow_ups.length}.${manualChecklist(summary.manual_steps ?? [])}${blockedChecklist(summary.blocked_tasks ?? [])}`
 
 const pullRequestPrompt = (summary, evidence) =>
   `${lanePrefix()}${args.milestone} ${args.phase} is checkpointed. Push the milestone branch and open a pull request from it into the default branch, ` +
@@ -798,7 +804,9 @@ phase('Review')
 const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '', ...(blockedEntries.length ? { failing_gate: blockedGate() } : {}) }
-if (blockedEntries.length) return { status: 'escalate', ...summary, evidence: '', failing_gate: blockedGate() }
+if (blockedEntries.length && !opensPullRequest()) return { status: 'escalate', ...summary, evidence: '', failing_gate: blockedGate() }
+const blockedTasks = blockedEntries.map(entry => ({ id: entry.task.id, reason: entry.evidence.slice(0, 200) }))
+if (blockedTasks.length) summary.blocked_tasks = blockedTasks
 
 phase('Checkpoint')
 const repairedCheckpoint = async first => {

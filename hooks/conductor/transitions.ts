@@ -8,7 +8,7 @@ import type { Escalation, Launch, LoopState } from './state'
 
 export type LoopEvent =
   | { type: 'kickoff-done'; brief: string; brief_path?: string; slices?: BriefSlices; brief_dir?: string; failed?: string }
-  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string; checkpoint_sha?: string }
+  | { type: 'phase-result'; status: 'checkpointed' | 'escalate'; phase: string; result_path: string; failing_gate?: string; pr_url?: string; checkpoint_sha?: string; blocked?: string[] }
   | { type: 'retro-done' }
   | { type: 'exit-result'; merged: boolean; failing_gate?: string }
 
@@ -82,6 +82,8 @@ const onKickoffDone = (state: LoopState, event: Extract<LoopEvent, { type: 'kick
   return { ...launched, notify: `${state.milestone}: task ${untagged.join(', ')} ${untagged.length === 1 ? 'has' : 'have'} open boxes but no phase tag, so no phase will run ${untagged.length === 1 ? 'it' : 'them'}; tag ${untagged.length === 1 ? 'it' : 'them'} (PN) in the plan` }
 }
 
+const blockedNote = (blocked: string[] | undefined) => (blocked === undefined || blocked.length === 0 ? '' : `; still blocked, listed on the PR: ${blocked.join('; ')}`)
+
 const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phase-result' }>): Action => {
   if (state.status !== 'phase') return { state }
   const results = { ...state.results, [event.phase]: event.result_path }
@@ -93,7 +95,7 @@ const onPhaseResult = (state: LoopState, event: Extract<LoopEvent, { type: 'phas
   return {
     state: { ...state, status: 'retro', results, awaiting_merge: { phase: event.phase, pr_url: event.pr_url } },
     launch: RETRO_LAUNCH,
-    notify: `${state.milestone} ${event.phase}: pull request ${event.pr_url} is open for your review and merge`,
+    notify: `${state.milestone} ${event.phase}: pull request ${event.pr_url} is open for your review and merge${blockedNote(event.blocked)}`,
   }
 }
 

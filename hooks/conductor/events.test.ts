@@ -76,3 +76,13 @@ test('a kickoff result that names an error is a failed kickoff', () => {
   const json = { brief: { common: '', tasks: [] }, decisions: [], checks: [], red: false, error: 'architect returned nothing' }
   expect(loopEventOf('', 'k.json', { id: 'k', workflow: 'milestone-kickoff' }, null, json)).toEqual({ type: 'kickoff-done', brief: '', failed: 'architect returned nothing' })
 })
+
+test('blocked tasks travel with a checkpointed phase result', () => {
+  const json = { status: 'checkpointed', phase: 'P8', pr_url: 'https://github.com/o/r/pull/860', blocked_tasks: [{ id: '88', reason: 'needs the drive key' }], tasks: [] }
+  expect(loopEventOf('', 'r.json', { id: 'w', workflow: 'phase' }, 'P8', json)).toMatchObject({ blocked: ['88: needs the drive key'] })
+})
+
+test('a blocked task listed on the PR does not count as an open box at the checkpoint', () => {
+  const reported = { type: 'phase-result' as const, status: 'checkpointed' as const, phase: 'P8', result_path: 'r.json', blocked: ['88: needs the drive key'] }
+  expect(verifiedCheckpoint(reported, { ...HEAD_IS_P1, openTasks: [] })).toEqual(reported)
+})
