@@ -141,6 +141,7 @@ const LONG_RUN_RULE =
 
 const COMMIT_RULE =
   '\nNever start a commit subject with `phase(`: only the phase checkpoint uses it.' +
+  '\nNever bypass commit hooks (no `--no-verify` or `-n`): when a hook fails, fix what it reports, or return the task blocked with its output.' +
   '\nNever start, stop or reconfigure services or containers outside the lane\'s own test resources; when a test needs one that is down, report the blocker instead.'
 
 const needsReview = (implemented) => implemented?.changed !== false
@@ -276,6 +277,7 @@ const checkpointRepairs = (checkpoint, diffs) => {
 
 const IMPLEMENT_INSTRUCTION =
   'Implement it outside-in, red first; tick each plan box in the commit that verifies it. ' +
+  'A step marked `(needs: <resource>)` is not yours: skip it and leave its box unticked; it becomes a checklist item on the PR and never makes the task blocked. ' +
   'While you work run only the tests of the files you change; the full suite runs once at the checkpoint. ' +
   'Read code by the anchors the brief slice names: the project\'s code graph tools when it has them, else grep -n and line ranges; never print a whole file you only need a part of. ' +
   'Chain an edit\'s test run and commit into one command when you can. Your test setup is in your eager file\'s Test environment section; do not rediscover it.'
@@ -782,12 +784,10 @@ const implementedEntries = tasks.length ? await implementAll(tasks) : []
 const entries = inPlanOrder([...landedEntries.filter(Boolean), ...implementedEntries], [...landed, ...tasks])
 
 const blockedEntries = entries.filter(entry => entry.blocked)
-if (blockedEntries.length) {
-  const unreviewed = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, NOT_REVIEWED)), follow_ups: [], review_rounds: 0 }
-  return { status: 'escalate', ...unreviewed, evidence: '', failing_gate: `blocked: ${blockedEntries.map(entry => `task ${entry.task.id} (${entry.evidence.slice(0, 160)})`).join('; ')}` }
-}
+const blockedGate = () => `blocked: ${blockedEntries.map(entry => `task ${entry.task.id} (${entry.evidence.slice(0, 160)})`).join('; ')}`
+if (blockedEntries.length) log(`${args.phase}: ${blockedGate()}; reviewing the finished tasks before escalating`)
 
-const reviewed = entries.filter(entry => entry.changed)
+const reviewed = entries.filter(entry => entry.changed && !entry.blocked)
 if (opensPullRequest()) {
   phase('Sync')
   const gap = syncGap(await syncDefaultBranch())
@@ -797,7 +797,8 @@ if (opensPullRequest()) {
 phase('Review')
 const outcome = reviewed.length ? await reviewPhase(reviewed) : NOT_REVIEWED
 const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entry, outcome)), follow_ups: outcome.followUps, review_rounds: outcome.rounds, fixes: FIX_LOG }
-if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
+if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '', ...(blockedEntries.length ? { failing_gate: blockedGate() } : {}) }
+if (blockedEntries.length) return { status: 'escalate', ...summary, evidence: '', failing_gate: blockedGate() }
 
 phase('Checkpoint')
 const repairedCheckpoint = async first => {
