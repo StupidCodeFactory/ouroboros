@@ -467,7 +467,9 @@ const fixOutcome = fixed => {
   return (fixed.commits ?? []).length ? 'fixed' : 'unchanged'
 }
 
-const logFix = (entry, round, fixed) => FIX_LOG.push({ task: entry.task.id, round, mode: 'handoff', outcome: fixOutcome(fixed) })
+const NO_RESUME_REASON = 'a workflow cannot continue an agent it started yet (docs/upstream-requests.md)'
+
+const logFix = (entry, round, fixed) => FIX_LOG.push({ task: entry.task.id, round, mode: 'handoff', reason: NO_RESUME_REASON, outcome: fixOutcome(fixed) })
 
 const recordFix = (entry, fixed) => {
   if (!fixed) return []
