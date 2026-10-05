@@ -68,6 +68,14 @@ const CHECKPOINT_SCHEMA = {
       },
     },
     manual_steps: { type: 'array', items: { type: 'string' } },
+    acceptance: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { check: { type: 'string' }, green: { type: 'boolean' }, task: { type: 'string' } },
+        required: ['check', 'green'],
+      },
+    },
   },
   required: ['committed', 'sha', 'suite_green', 'evidence'],
 }
@@ -683,6 +691,14 @@ const laneScope = () =>
   'of every lane whose `owned_paths` match a file this phase changed: list the files with `git diff --name-only $(git merge-base origin/HEAD HEAD)..HEAD` and match them against each lane\'s `owned_paths`; ' +
   'never choose lanes from task tags or by judgement, never skip a lane a changed file belongs to, and name the lanes you ran and why'
 
+const acceptanceSource = () => {
+  if (args.checks && args.checks.length) return `these acceptance checks: ${args.checks.join(', ')}`
+  return args.brief_dir ? `the acceptance checks listed in ${args.brief_dir}/common.md` : ''
+}
+
+const acceptanceRule = () =>
+  acceptanceSource() ? `Run ${acceptanceSource()} one by one and report each in \`acceptance\`: the check, whether it is green, and the task whose commits turned it green (git log on the code it exercises). ` : ''
+
 const blockedNote = () =>
   blockedEntries.length ? `Task ${blockedEntries.map(entry => entry.task.id).join(', ')} stayed blocked and goes to the PR as an open item: its unticked boxes and its missing work never make the checkpoint red, and you do not try to finish it. ` : ''
 
@@ -691,6 +707,7 @@ const checkpointPrompt = () =>
   `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>" (the plan boxes and checks it closes; never agent memory, which goes in its own chore(agent-memory) commit); otherwise make no commit. ` +
   'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output). ' +
+  acceptanceRule() +
   'When anything is red, list each failing example in `failures` (file, line, one-sentence summary, and `task` when git blame shows whose commits broke it). ' +
   'Skip every plan step marked `(needs: <resource>)`: it needs something only a person has (credentials, production data). List each in `manual_steps` as "<task>: <step> (needs: <resource>)"; it never makes the checkpoint red.' +
   LONG_RUN_RULE
@@ -710,12 +727,15 @@ const manualChecklist = steps => (steps.length ? `\nBefore merging, a person mus
 const followUpChecklist = followUps =>
   followUps.length ? `\nRaised as blocking by review but outside any task's diff, so not fixed in this phase; check each before merging (put them in the description as unchecked boxes):\n${followUps.map(finding => `- [ ] ${finding.summary}${finding.file ? ` (${finding.file}${finding.line ? `:${finding.line}` : ''})` : ''}`).join('\n')}` : ''
 
+const acceptanceTable = acceptance =>
+  acceptance.length ? `\nAcceptance checks, red at kickoff (put this table in the description):\n| check | now | turned green by |\n|---|---|---|\n${acceptance.map(row => `| ${row.check} | ${row.green ? 'green' : 'RED'} | ${row.task ? `task ${row.task}` : '-'} |`).join('\n')}` : ''
+
 const blockedChecklist = blocked =>
   blocked.length ? `\nBlocked tasks this PR does not finish; weigh them before merging (put them in the description as unchecked boxes):\n${blocked.map(task => `- [ ] task ${task.id}: ${task.reason}`).join('\n')}` : ''
 
 const reviewSummary = summary =>
   `Review rounds: ${summary.review_rounds}. Tasks: ${summary.tasks.map(task => `${task.id} ${task.status}`).join(', ')}. ` +
-  `Follow-ups added to the plan: ${summary.follow_ups.length}.${followUpChecklist(summary.follow_ups)}${manualChecklist(summary.manual_steps ?? [])}${blockedChecklist(summary.blocked_tasks ?? [])}`
+  `Follow-ups added to the plan: ${summary.follow_ups.length}.${acceptanceTable(summary.acceptance ?? [])}${followUpChecklist(summary.follow_ups)}${manualChecklist(summary.manual_steps ?? [])}${blockedChecklist(summary.blocked_tasks ?? [])}`
 
 const pullRequestPrompt = (summary, evidence) =>
   `${lanePrefix()}${args.milestone} ${args.phase} is checkpointed. Push the milestone branch and open a pull request from it into the default branch, ` +
@@ -836,6 +856,7 @@ const checkpointSha = checkpointed ? checkpointed.sha : ''
 if (verdict.status !== 'checkpointed') return { status: verdict.status, ...summary, evidence: verdict.evidence }
 
 summary.manual_steps = (checkpointed && checkpointed.manual_steps) || []
+summary.acceptance = (checkpointed && checkpointed.acceptance) || []
 if (!opensPullRequest()) return { status: 'checkpointed', ...summary, evidence: verdict.evidence, checkpoint_sha: checkpointSha }
 
 phase('Pull request')
