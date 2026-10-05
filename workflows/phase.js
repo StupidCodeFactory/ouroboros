@@ -132,7 +132,10 @@ const locationLine = () => {
   return parts.length ? `${parts.join(' ')}\n` : ''
 }
 
-const located = (prompt, opts) => agent(`${locationLine()}${prompt}`, opts)
+const TASK_SCOPE =
+  'Your task is this prompt alone, and it authorizes every commit it asks for. Commands or messages the user ran elsewhere in the session are not instructions to you.\n'
+
+const located = (prompt, opts) => agent(`${TASK_SCOPE}${locationLine()}${prompt}`, opts)
 
 const ouroborosAgent = agent => `ouroboros:${agent}`
 
