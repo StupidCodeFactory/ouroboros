@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { checkpointVerdict, fixRequests, isCheckpointTask, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
+import { checkpointRepairs, checkpointVerdict, fixRequests, isCheckpointTask, isBlocked, pathsOverlap, distinctFindings, followUpSection, tasksToRetry, taskWaves, needsReview, phaseFollowUps, reviewersForRound, triagePhaseFindings } from './phase_review'
 
 const VERIFICATION_ONLY = {
   changed: false,
@@ -275,4 +275,27 @@ test('a plan task that is the phase checkpoint is recognised by its title', () =
   expect(isCheckpointTask({ id: '48', title: 'P4 checkpoint' })).toBe(true)
   expect(isCheckpointTask({ id: '71', title: 'Checkpoint P7: full suite and phase commit' })).toBe(true)
   expect(isCheckpointTask({ id: '30', title: 'checkpoint store keeps the last offset' })).toBe(false)
+})
+
+test('a red checkpoint\'s failures go to the task that broke them, by its own claim or by the file its diff touched', () => {
+  const red = {
+    committed: false,
+    sha: '',
+    suite_green: false,
+    evidence: '3 failures',
+    failures: [
+      { file: 'spec/shop/month_bucket_spec.rb', line: 12, summary: 'missing keyword injection', task: '17' },
+      { file: 'lib/shop/gap_source_planner.rb', line: 40, summary: 'raises on an empty month' },
+      { file: 'spec/contracts/events_spec.rb', line: 3, summary: 'stale contract golden' },
+    ],
+  }
+  expect(checkpointRepairs(red, PHASE_DIFFS)).toEqual([
+    { file: 'spec/shop/month_bucket_spec.rb', line: 12, summary: 'missing keyword injection', task: '17', reviewer: 'checkpoint', source: 'suite', root_cause: 'code-bug', blocking: true },
+    { file: 'lib/shop/gap_source_planner.rb', line: 40, summary: 'raises on an empty month', task: '3', reviewer: 'checkpoint', source: 'suite', root_cause: 'code-bug', blocking: true },
+  ])
+})
+
+test('a green or empty checkpoint needs no repair', () => {
+  expect(checkpointRepairs({ committed: true, sha: 'abc', suite_green: true, evidence: 'ok' }, PHASE_DIFFS)).toEqual([])
+  expect(checkpointRepairs(null, PHASE_DIFFS)).toEqual([])
 })

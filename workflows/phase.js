@@ -71,6 +71,14 @@ const CHECKPOINT_SCHEMA = {
     sha: { type: 'string' },
     suite_green: { type: 'boolean' },
     evidence: { type: 'string' },
+    failures: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { task: { type: 'string' }, file: { type: 'string' }, line: { type: 'number' }, summary: { type: 'string' } },
+        required: ['file', 'summary'],
+      },
+    },
   },
   required: ['committed', 'sha', 'suite_green', 'evidence'],
 }
@@ -265,6 +273,16 @@ const checkpointVerdict = (checkpoint) => {
   if (!checkpoint) return { status: 'escalate', evidence: 'checkpoint agent returned nothing' }
   const status = checkpoint.committed && checkpoint.suite_green ? 'checkpointed' : 'escalate'
   return { status, evidence: checkpoint.evidence }
+}
+
+const ownerByFile = (file, diffs) => Object.keys(diffs).find(id => (diffs[id] ?? []).some(hunk => samePath(hunk.file, file)))
+
+const checkpointRepairs = (checkpoint, diffs) => {
+  if (!checkpoint || (checkpoint.committed && checkpoint.suite_green)) return []
+  return (checkpoint.failures ?? []).flatMap(failure => {
+    const task = failure.task !== undefined && diffs[failure.task] !== undefined ? failure.task : ownerByFile(failure.file, diffs)
+    return task === undefined ? [] : [{ ...failure, task, reviewer: 'checkpoint', source: 'suite', root_cause: 'code-bug', blocking: true }]
+  })
 }
 
 const IMPLEMENT_INSTRUCTION =
@@ -559,7 +577,8 @@ const checkpointPrompt = () =>
   `${eagerPreamble('auditor.md')}${lanePrefix()}Run the ${args.milestone} checks that ${args.phase} touches and the full test and lint commands ` +
   `${laneScope()} in .claude/ouroboros.json. ` +
   `Only when every one is green, commit with subject "phase(${args.phase}): <summary>"; otherwise make no commit. ` +
-  'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output).' +
+  'Return `committed`, the commit `sha` (empty when none), `suite_green` and the `evidence` (commands, exit codes, decisive output). ' +
+  'When anything is red, list each failing example in `failures` (file, line, one-sentence summary, and `task` when git blame shows whose commits broke it).' +
   LONG_RUN_RULE
 
 const checkpoint = () =>
@@ -661,7 +680,14 @@ const summary = { phase: args.phase, tasks: entries.map(entry => taskResult(entr
 if (outcome.blocking.length) return { status: 'escalate', ...summary, evidence: '' }
 
 phase('Checkpoint')
-const checkpointed = await checkpoint()
+const repairedCheckpoint = async first => {
+  const repairs = checkpointRepairs(first, diffsOf(reviewed))
+  if (!repairs.length) return first
+  log(`${args.phase}: checkpoint red; one fix round for task ${[...new Set(repairs.map(repair => repair.task))].join(', ')}, then the checkpoint again`)
+  await fixRound(reviewed, repairs, 'checkpoint')
+  return checkpoint()
+}
+const checkpointed = await repairedCheckpoint(await checkpoint())
 const verdict = checkpointVerdict(checkpointed)
 const checkpointSha = checkpointed ? checkpointed.sha : ''
 if (verdict.status !== 'checkpointed') return { status: verdict.status, ...summary, evidence: verdict.evidence }

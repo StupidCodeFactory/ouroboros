@@ -93,6 +93,18 @@ export const checkpointVerdict = (checkpoint: Checkpoint | null) => {
   return { status, evidence: checkpoint.evidence }
 }
 
+export type CheckpointFailure = { file: string; line?: number; summary: string; task?: string }
+
+export const ownerByFile = (file: string, diffs: TaskDiffs) => Object.keys(diffs).find(id => (diffs[id] ?? []).some(hunk => samePath(hunk.file, file)))
+
+export const checkpointRepairs = (checkpoint: (Checkpoint & { failures?: CheckpointFailure[] }) | null, diffs: TaskDiffs) => {
+  if (!checkpoint || (checkpoint.committed && checkpoint.suite_green)) return []
+  return (checkpoint.failures ?? []).flatMap(failure => {
+    const task = failure.task !== undefined && diffs[failure.task] !== undefined ? failure.task : ownerByFile(failure.file, diffs)
+    return task === undefined ? [] : [{ ...failure, task, reviewer: 'checkpoint', source: 'suite' as const, root_cause: 'code-bug', blocking: true }]
+  })
+}
+
 export type PlannedTask = { id: string; title: string; touches?: string[] }
 export type Merge = { merged: string[]; conflicted: string[] }
 
