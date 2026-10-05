@@ -24,3 +24,4 @@ Read every task once more and fix each that fails one of these:
 8. An expected output is what the command prints in this repository today, after the step.
 9. A claim about another task ("turns green here") holds in plan order: everything it needs lands in this task or an earlier one.
 - A step that needs something only a person has (real credentials, production data, a paid account) ends with `(needs: <resource>)`. Phases skip it, and it becomes an unchecked item on the phase PR instead of a red checkpoint.
+- Size for fixed costs. Every task pays an implementer's start-up and every phase pays a branch, a review, a checkpoint and a PR, so prefer fewer, larger tasks (one coherent change an implementer finishes in one sitting; steps that touch the same files belong together) and fewer phases (split a phase only where a PR must merge before the next work can start).
