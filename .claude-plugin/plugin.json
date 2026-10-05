@@ -1,6 +1,6 @@
 {
   "name": "ouroboros",
-  "version": "0.19.5",
+  "version": "0.20.0",
   "description": "The dev loop that eats its own mistakes: milestone and phase workflows, long-lived specialist agents, and skills that rewrite themselves after every phase, each change proven by an eval.",
   "workflows": "./workflows",
   "types": "./types/index.d.ts",
