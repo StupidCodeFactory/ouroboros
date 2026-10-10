@@ -92,7 +92,7 @@ Then two agent stages, still before implementing:
 6. Cheat attempt: a fresh agent that did not write the checks gets the contract and the checks and, in a throwaway worktree, tries to make them pass without meeting the criteria (hard-coded values, stubs, special-casing the fixture). It returns the diffs it tried. The hook runs `done_when` on each diff; any check that turns green on a cheat is weak, with that diff as evidence.
 7. Coverage review: the same agent says, per criterion, whether its checks would catch the criterion being only partly met. Any "no" is weak.
 
-When all pass, the hook records a SHA-256 fingerprint of every file in `done_when[].files` and of the contract itself in `.claude/ouroboros/sections/<slug>.json`, with the red commit sha.
+When all pass, the checks and the contract are committed alone as `checks(<slug>)`; that commit is the fingerprint. The gate compares every check file and the contract at HEAD with that commit (`git diff <red sha>..HEAD`), so no hash store is needed.
 
 ### 4. No relaxing, and escalation
 
