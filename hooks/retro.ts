@@ -6,7 +6,7 @@ const PR_MERGE = /\bgh pr merge\b/
 export const IMPLEMENTER_AGENTS = new Set(['implementer'])
 
 export const RETRO_PROMPT =
-  'Run the retro: process every open incident per your agent definition. Then check every .claude/agent-memory/*.md for file paths that no longer exist in the repository and rewrite or drop those lines. Report the fixed count and the memory lines changed.'
+  'Run the retro: process every open incident per your agent definition. Then compact every .claude/agent-memory/*.md per your agent definition, including lines with file paths that no longer exist in the repository. Report the fixed count and each memory file\'s size before and after.'
 
 export type EagerFile = { name: string; size: number }
 

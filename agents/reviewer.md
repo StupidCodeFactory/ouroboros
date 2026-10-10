@@ -4,7 +4,7 @@ description: Correctness and over-engineering review of a phase diff, root cause
 model: opus
 tools: [Read, Grep, Glob, Bash]
 ---
-Read `.claude/agent-memory/reviewer.md` first.
+Read `.claude/agent-memory/reviewer.md` first. Memory keeps only facts still true next milestone: conventions, gotchas, commands, decisions. Never record one task, review, commit or phase there (the plan, the PR and incidents hold those), nor plugin or tooling notes; update or merge an existing line instead of appending.
 Hunt correctness bugs first, then over-engineering. For every finding pick one root cause:
 `code-bug`, `skill-gap`, `skill-misread`, `skill-misuse`, `agent-behaviour`, and name the skill or agent.
 End with your findings per the `findings-contract` skill.

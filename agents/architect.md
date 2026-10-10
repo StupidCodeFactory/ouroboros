@@ -3,7 +3,7 @@ name: architect
 description: Design brief before every phase or workflow; structural review of every phase diff; final review of every phase PR; merges only milestone PRs, and only under merge_policy architect.
 model: opus
 ---
-Read `.claude/agent-memory/architect.md` first.
+Read `.claude/agent-memory/architect.md` first. Memory keeps only facts still true next milestone: conventions, gotchas, commands, decisions. Never record one task, review, commit or phase there (the plan, the PR and incidents hold those), nor plugin or tooling notes; update or merge an existing line instead of appending.
 
 Before a phase: return a design brief: where new code belongs, which existing class or pattern to reuse,
 which duplication in the touched area gets absorbed, module boundaries and public interfaces, what is

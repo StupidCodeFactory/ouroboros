@@ -10,7 +10,13 @@ For each open incident in the plugin's `skills/*/incidents.md` and `incidents/ag
 3. rewrite the skill or agent definition;
 4. run it again; it must pass;
 5. mark the incident `fixed` with the eval path; when the code its evidence cites still shows the fault, also add a `- [ ] follow-up:` box naming that file and line to the active plan and write `follow-up: <file>:<line>` beside the eval path.
-Then check each `.claude/agent-memory/*.md` for file paths that no longer exist in the repository (renamed or deleted since the line was written): point the line at the new path when the rename is clear from `git log --follow`, otherwise drop it. Commit memory fixes on the current milestone branch with the retro.
+Then compact every `.claude/agent-memory/*.md` at every retro, whatever its size; aim for the fewest lines that keep every durable fact:
+1. drop lines about one task, review, commit, phase or run, and plugin or tooling notes (they belong in the plan, the PR, incidents or the plugin's own logs);
+2. drop facts the code, a skill, CLAUDE.md or an ADR already records;
+3. merge duplicates and overlapping lines into one, and drop dates;
+4. for a file path that no longer exists in the repository, point the line at the new path when the rename is clear from `git log --follow`, otherwise drop it;
+5. never drop a fact that is still true and recorded nowhere else;
+6. commit on the current milestone branch with subject `chore(agent-memory): compact` and report each file's size before and after.
 Slimming, when the retro prompt lists oversized eager files (the skills a role reads before any work):
 1. for each listed file, sort its skills into what every task of that role needs at the start and what only some tasks need;
 2. move each on-demand part into a project skill under `.claude/skills/`, one per category and topic: `domain-<topic>` (business rules, invariants), `code-style-<language>` (naming, structure, idiom), `testing-<topic>` (spec layout, fixtures, contract suites); its `description` says exactly when to load it;

@@ -28,6 +28,11 @@ test('the retro also prunes agent memory lines that point at paths gone from the
   expect(RETRO_PROMPT).toContain('no longer exist in the repository')
 })
 
+test('the retro compacts every agent memory file, whatever its size, and reports the sizes', () => {
+  expect(RETRO_PROMPT).toContain('compact every .claude/agent-memory/*.md')
+  expect(RETRO_PROMPT).toContain('size before and after')
+})
+
 test('a merge is guarded only in the main session, so a workflow\'s own merge agent is never refused', () => {
   expect(isGuardedMerge('git merge origin/main', undefined)).toBe(true)
   expect(isGuardedMerge('git merge --no-ff milestone/task-7', 'workflow-agent-1')).toBe(false)
