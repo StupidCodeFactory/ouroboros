@@ -926,7 +926,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.origin.kind !== 'task-notification') {
+    if (e.origin?.kind !== 'task-notification') {
       await logCandidateLesson($, e.text)
       return next(e)
     }

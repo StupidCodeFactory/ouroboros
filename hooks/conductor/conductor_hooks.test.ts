@@ -34,7 +34,7 @@ const worldBeneath = (on: On, files: Record<string, string>, sent: string[] = []
   on('session.receive', (_, e) => ({ text: e.text }))
   on('session.id', () => ({ value: 'main-session' }))
   on('prompt.submit', (_, e) => {
-    if (e.origin.kind === 'plugin') sent.push(e.text)
+    if (e.origin?.kind !== 'task-notification') sent.push(e.text)
     return { text: e.text }
   })
   return disk
