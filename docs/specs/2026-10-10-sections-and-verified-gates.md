@@ -71,7 +71,7 @@ Decisions and their reasons: ADRs 0001 to 0008 in `docs/adr/`. This file holds o
 
 - The next sub-issue is the lowest-numbered open sub-issue in the planned column whose dependencies are all closed.
 - The user types only issue numbers.
-- Branch: `<branch_prefix><number>-<slug>` (default prefix `work/`), where the slug is the title lowercased, non-alphanumerics folded to `-`, cut to 50 characters; from the default branch's origin tip, in its own worktree. PR title: the sub-issue title.
+- Branch: `<branch_prefix><number>-<slug>` (default prefix `work/`), where the slug is the title lowercased, non-alphanumerics folded to `-`, cut to 50 characters; from the default branch's origin tip, in its own worktree. The PR targets the default branch, never another task's branch, and its title is the sub-issue title.
 - Launching it moves the sub-issue to the in-progress column.
 
 ### 5. Checks red first (before any implementer runs)
@@ -149,7 +149,7 @@ GATE PASS #<number> "<title>" at <sha>
 - `/ouroboros start <issue>` finds the milestone's next sub-issue and sets: `the gate for #<number> printed GATE PASS or GATE FAIL, or an escalation for it is open; stop after 3 workflow launches`. The goal's turn launches `ouroboros:task`.
 - While the workflow runs, `/goal` evaluation waits (background work). When the result arrives, the conductor runs the final gate, which prints its block; the evaluator reads that line, which only the hook writes.
 - Met with `GATE PASS`: the PR waits for the user. Met with `GATE FAIL` or an open escalation: the user is told and nothing continues.
-- When the conductor sees the PR merged (the existing throttled `gh` check, or `/ouroboros resume`), it checks the sub-issue is closed, moves it to the done column, and sets the next sub-issue's goal the same way. When no sub-issue is open, it runs milestone exit. It stops on `/ouroboros pause`.
+- When the conductor sees the PR merged (the existing throttled `gh` check, or `/ouroboros resume`), it closes the sub-issue as completed if it is still open, moves it to the done column, and sets the next sub-issue's goal the same way. When no sub-issue is open, it runs milestone exit. It stops on `/ouroboros pause`.
 
 ### 10. Milestone exit (hook)
 
