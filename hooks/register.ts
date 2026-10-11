@@ -34,6 +34,10 @@ import { IMPLEMENTER_AGENTS, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow,
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { duplicateLoadWarning, isAnotherInstance } from './double_load'
 import { stripFrontmatter } from './skill_text'
+import { addToBoardCommand, boardIdsOf, createSubIssueCommand, creationOrder, dropCommand, editIssueCommand, githubConfigOf, issueOfPosition, linkSubIssueCommand, setColumnCommand } from './github/gh_commands'
+import type { BoardIds, GhCommand, GithubConfig } from './github/gh_commands'
+import { plannedBody } from './github/kickoff_plan'
+import type { KickoffChanges, PlannedTask, SubIssue } from './github/kickoff_plan'
 
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
 const INCIDENT_LOG_HEADER = '# Incidents\n\n'
@@ -654,6 +658,72 @@ async function releaseTestResources($: EngineInterface, runId: string) {
   const path = await testResourcesPath($)
   const claims = await readTestResourceClaims($, path)
   if (claims.some(claim => claim.run === runId)) await $.fs.write(path, JSON.stringify(claims.filter(claim => claim.run !== runId)))
+}
+
+async function gh($: EngineInterface, command: GhCommand) {
+  const { exitCode, stdout, stderr } = await $.process.run(command.argv, command.stdin === undefined ? undefined : { stdin: command.stdin })
+  if (exitCode !== 0) throw new Error(`${command.argv.slice(0, 3).join(' ')} failed: ${stderr.trim()}`)
+  return stdout.trim()
+}
+
+const ownerOf = (github: GithubConfig) => (github.repo ?? '').split('/')[0] ?? ''
+
+const issueUrl = (github: GithubConfig, number: number) => `https://github.com/${github.repo}/issues/${number}`
+
+async function githubConfig($: EngineInterface): Promise<GithubConfig> {
+  const github = githubConfigOf((await readConfig($)).github)
+  if (github.repo !== undefined) return github
+  return { ...github, repo: await gh($, { argv: ['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'] }) }
+}
+
+async function boardIds($: EngineInterface, github: GithubConfig) {
+  const owner = ownerOf(github)
+  const projects = JSON.parse(await gh($, { argv: ['gh', 'project', 'list', '--owner', owner, '--limit', '100', '--format', 'json'] }))
+  const project = projects.projects.find((candidate: { title: string }) => candidate.title === github.project)
+  const fields = project === undefined ? { fields: [] } : JSON.parse(await gh($, { argv: ['gh', 'project', 'field-list', String(project.number), '--owner', owner, '--format', 'json'] }))
+  return boardIdsOf(projects, fields, github)
+}
+
+export async function readMilestone($: EngineInterface, github: GithubConfig, number: number) {
+  return JSON.parse(await gh($, { argv: ['gh', 'issue', 'view', String(number), '-R', github.repo ?? '', '--json', 'number,title,body'] })) as { number: number; title: string; body: string }
+}
+
+export async function readSubIssues($: EngineInterface, github: GithubConfig, milestone: number): Promise<SubIssue[]> {
+  const lines = await gh($, { argv: ['gh', 'api', `repos/${github.repo}/issues/${milestone}/sub_issues`, '--paginate', '--jq', '.[] | {number, state, title, body}'] })
+  return lines.split('\n').filter(Boolean).map(line => JSON.parse(line) as SubIssue)
+}
+
+async function createSubIssue($: EngineInterface, github: GithubConfig, milestone: number, title: string, body: string) {
+  const number = Number((await gh($, createSubIssueCommand(github.repo ?? '', title, body))).split('/').pop())
+  const id = Number(await gh($, { argv: ['gh', 'api', `repos/${github.repo}/issues/${number}`, '--jq', '.id'] }))
+  await gh($, linkSubIssueCommand(github.repo ?? '', milestone, id))
+  return number
+}
+
+async function moveToColumn($: EngineInterface, github: GithubConfig, ids: BoardIds, number: number, column: 'planned') {
+  const itemId = await gh($, addToBoardCommand(ownerOf(github), ids, issueUrl(github, number)))
+  await gh($, setColumnCommand(ids, itemId, column))
+}
+
+export async function applyKickoffChanges($: EngineInterface, github: GithubConfig, ids: BoardIds, milestone: number, tasks: PlannedTask[], changes: KickoffChanges) {
+  const created = new Map<number, number>()
+  const bodyOf = (task: PlannedTask) => plannedBody(task, issueOfPosition(tasks, created))
+  for (const position of creationOrder(tasks, changes.create)) {
+    const task = tasks[position - 1] as PlannedTask
+    created.set(position, await createSubIssue($, github, milestone, task.title, bodyOf(task)))
+  }
+  for (const number of changes.update) {
+    const task = tasks.find(candidate => candidate.issue === number) as PlannedTask
+    await gh($, editIssueCommand(github.repo ?? '', number, task.title, bodyOf(task)))
+  }
+  for (const number of changes.drop) await gh($, dropCommand(github.repo ?? '', number))
+  for (const number of [...created.values(), ...changes.update, ...changes.unchanged]) await moveToColumn($, github, ids, number, 'planned')
+  return { created: [...created.values()], updated: changes.update, dropped: changes.drop, unchanged: changes.unchanged, closed: changes.closed }
+}
+
+export async function githubBoard($: EngineInterface) {
+  const github = await githubConfig($)
+  return { github, ids: await boardIds($, github) }
 }
 
 async function repositoryRoot($: EngineInterface) {
