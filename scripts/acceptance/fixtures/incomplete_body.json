@@ -1,0 +1,49 @@
+{
+  "subIssues": [
+    {
+      "number": 2,
+      "state": "open",
+      "body": "## Goal\nAdd a.\n\n## Plan\n1. Write a.\nFiles: `a.txt`\n\n## Checklist\n- [x] a exists: `test -f a.txt`\n\n## Depends on\nnone\n",
+      "column": "Done",
+      "comments": [
+        "## Review found defects\n- a.txt is empty",
+        "Looks good now."
+      ],
+      "labels": [
+        "ouroboros"
+      ]
+    },
+    {
+      "number": 3,
+      "state": "open",
+      "body": "## Goal\nAdd b.\n\n## Plan\n1. Write b.\n\n## Checklist\n- [x] b exists: `test -f b.txt`\n\n## Depends on\n#2\n",
+      "column": "Planned",
+      "comments": [],
+      "labels": [
+        "ouroboros"
+      ]
+    }
+  ],
+  "pulls": [
+    {
+      "number": 10,
+      "state": "OPEN",
+      "headRefName": "work/2-a",
+      "baseRefName": "main",
+      "body": "Adds a.\n\nCloses #2",
+      "createdAt": "2026-10-11T10:00:00Z",
+      "mergedAt": null,
+      "closedAt": null
+    },
+    {
+      "number": 11,
+      "state": "OPEN",
+      "headRefName": "work/3-b",
+      "baseRefName": "work/2-a",
+      "body": "Adds b.\n\nCloses #3",
+      "createdAt": "2026-10-11T11:00:00Z",
+      "mergedAt": null,
+      "closedAt": null
+    }
+  ]
+}
