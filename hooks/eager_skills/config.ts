@@ -1,3 +1,5 @@
+import type { GithubSettings } from '../github/gh_commands'
+
 export type SkillRef = { name: string; level?: string }
 
 type LaneConfig = { eager_skills?: string[] }
@@ -14,6 +16,8 @@ export type OuroborosConfig = {
   drafts_dir?: string
   effort?: Partial<Record<Stage, Effort>>
   models?: Partial<Record<'implementer' | 'reviewer' | 'architect' | 'auditor', string>>
+  prd?: string
+  github?: GithubSettings
 }
 
 export const DEFAULT_EAGER_SKILLS_MAX_CHARS = 60000
