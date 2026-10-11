@@ -20,6 +20,7 @@ test('a phase checkpoint commit starts the skill-curator retro', async ($, on) =
     return { value: undefined }
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  grepAnswers(on, '/project\n')
   on('fs.exists', () => ({ value: false }))
 
   await $.tool.call({ tool: 'Bash', command: 'git commit -m "phase(P1): add invoice export"' })

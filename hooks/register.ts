@@ -222,8 +222,16 @@ async function startRetro($: EngineInterface): Promise<Run> {
   return { id: spawned.agentId ?? 'retro', workflow: 'retro' }
 }
 
+async function hasLoopState($: EngineInterface) {
+  return $.fs.exists(await projectPath($, STATE_PATH))
+}
+
+async function loopStateText($: EngineInterface) {
+  return (await hasLoopState($)) ? await $.fs.read(await projectPath($, STATE_PATH)) : undefined
+}
+
 async function readLoopState($: EngineInterface) {
-  return parseState((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
+  return parseState(await loopStateText($))
 }
 
 const RUNTIME_IGNORE = '.claude/ouroboros/.gitignore'
@@ -236,7 +244,7 @@ async function ensureRuntimeIgnored($: EngineInterface) {
 
 async function writeLoopState($: EngineInterface, state: LoopState) {
   await ensureRuntimeIgnored($)
-  await $.fs.write(STATE_PATH, serializeState(state))
+  await $.fs.write(await projectPath($, STATE_PATH), serializeState(state))
 }
 
 async function activePlanText($: EngineInterface) {
@@ -776,7 +784,7 @@ export async function draftsPath($: EngineInterface, relative: string) {
 }
 
 export async function activeDrafts($: EngineInterface) {
-  return activeDraftsOf((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
+  return activeDraftsOf(await loopStateText($))
 }
 
 const agentDefinitionPath = ($: EngineInterface, agent: string) => `${$.plugin.root}/agents/${agent}.md`
@@ -818,8 +826,9 @@ async function writeEagerFiles($: EngineInterface): Promise<{ deny: string } | {
 }
 
 async function recordSpawn($: EngineInterface, agent: string, spawn: EagerSpawn) {
-  const existing = (await $.fs.exists(SPAWNS_LOG)) ? await $.fs.read(SPAWNS_LOG) : ''
-  await $.fs.write(SPAWNS_LOG, `${existing}${JSON.stringify({ agent, lane: spawn.lane, skills: spawn.skills })}\n`)
+  const path = await projectPath($, SPAWNS_LOG)
+  const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
+  await $.fs.write(path, `${existing}${JSON.stringify({ agent, lane: spawn.lane, skills: spawn.skills })}\n`)
 }
 
 async function addressableAgentName($: EngineInterface, agentId: string) {
@@ -912,7 +921,7 @@ export const register: Register = on => {
   })
 
   on('prompt.context', async ($, e, next) => {
-    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    if (!(await hasLoopState($))) return next(e)
     const merged = await noticedMerge($, await readLoopState($)).catch(loudly)
     const header = loopHeader(await readLoopState($))
     return next({ ...e, blocks: [...e.blocks, { name: 'ouroboros', text: merged === undefined ? header : `${header}\n${merged}` }] })
@@ -998,7 +1007,7 @@ export const register: Register = on => {
 
   on('session.compact', async ($, e, next) => {
     if (e.agentId !== undefined) return next({ ...e, instructions: SUBAGENT_COMPACTION_INSTRUCTIONS })
-    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    if (!(await hasLoopState($))) return next(e)
     return next({ ...e, instructions: COMPACT_INSTRUCTIONS })
   })
 

@@ -113,6 +113,7 @@ test('a merged milestone PR starts the retro and the ADR acceptance', async ($, 
   const spawned = spawnsBeneath(on)
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  gitBeneath(on, { 'git rev-parse': '/project\n' })
   on('fs.exists', () => ({ value: false }))
 
   await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --merge' })

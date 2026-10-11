@@ -901,3 +901,26 @@ test('an oversized result from an agent outside the loop passes through whole', 
   expect(JSON.stringify(answered.result)).toContain('z'.repeat(5000))
   expect(written.size).toBe(0)
 })
+
+test('a session whose cwd moved into a subdirectory still writes the runtime directory under the checkout root', async ($, on) => {
+  const files: Record<string, string> = { '.claude/ouroboros.json': CONFIG, '/project/docs/drafts/plans/m1.md': PLAN }
+  const written = new Map<string, string>()
+  const fileAt = (path: string) => Object.entries(files).find(([name]) => path.endsWith(name))?.[1]
+  on('process.run', (_, e) => {
+    const stdout = e.argv.includes('--show-toplevel') ? '/project\n' : e.argv.includes('--git-common-dir') ? '/project/.git\n' : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('session.cwd', () => ({ value: '/project/skills/spec-authoring' }))
+  on('fs.exists', (_, e) => ({ value: fileAt(e.path) !== undefined }))
+  on('fs.read', (_, e) => ({ value: fileAt(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    written.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+
+  await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect([...written.keys()]).toContain('/project/.claude/ouroboros/state.json')
+  expect([...written.keys()].every(path => path.startsWith('/project/.claude/ouroboros/'))).toBe(true)
+})
