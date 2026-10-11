@@ -183,7 +183,6 @@ test('a kickoff result is applied, recorded and answered with numbers per outcom
   expect(byNumber.get(12)).toMatchObject({ state: 'closed', stateReason: 'not planned', comments: [KICKOFF_DROPPED_COMMENT] })
   expect(byNumber.get(3)?.body).toBe(renderMilestoneBody({ goal: 'Owners see their Pages.', brief: 'Pages first.', acceptance: [{ text: 'all green', command: './scripts/pre-push', done: false }] }))
   expect([11, 13].map(number => byNumber.get(number)?.column)).toEqual(['Planned', 'Planned'])
-  expect(JSON.parse(disk.get('.claude/ouroboros/results/kickoff-3.json') ?? '{}')).toEqual({ created: [13], updated: [11], dropped: [12], left_closed: [10], started_at: '2026-10-11T12:00:00.000Z' })
   expect(stateOf(disk)).toMatchObject({ status: 'idle' })
   expect(stateOf(disk).run).toBeUndefined()
 })
@@ -199,4 +198,17 @@ test('a rejected task list applies nothing and answers the reason', async ($, on
   expect(writes).toEqual([])
   expect(disk.has('.claude/ouroboros/results/kickoff-3.json')).toBe(false)
   expect(stateOf(disk)).toMatchObject({ status: 'idle' })
+})
+
+test('the kickoff record holds the start time and the planned tasks', async ($, on) => {
+  const tasks = [planned('Pages list', { issue: 11 }), planned('Page search', { depends_on: [{ task: 1 }] })]
+  const existing = [MILESTONE, issue(11, 'Page list')]
+  const { disk } = githubWorld(on, { '.claude/ouroboros.json': CONFIG, '.claude/ouroboros/state.json': kickoffInFlight, [OUTPUT_FILE]: outputOf(tasks) }, existing, [11])
+
+  await $.session.receive({ origin: NOTIFICATION, text: notification })
+
+  expect(JSON.parse(disk.get('.claude/ouroboros/results/kickoff-3.json') ?? '{}')).toEqual({
+    started_at: '2026-10-11T12:00:00.000Z',
+    planned: [{ issue: 11, title: 'Pages list' }, { title: 'Page search' }],
+  })
 })

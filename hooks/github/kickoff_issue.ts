@@ -43,13 +43,9 @@ export const architectResult = (json: unknown): { milestone: MilestoneBody; task
   }
 }
 
-export const kickoffRecord = (applied: AppliedKickoff, startedAt: number) => ({
-  created: applied.created,
-  updated: applied.updated,
-  dropped: applied.dropped,
-  left_closed: applied.closed,
-  started_at: new Date(startedAt).toISOString(),
-})
+const plannedEntry = (task: PlannedTask) => (task.issue === undefined ? { title: task.title } : { issue: task.issue, title: task.title })
+
+export const kickoffRecord = (startedAt: number, tasks: PlannedTask[]) => ({ started_at: new Date(startedAt).toISOString(), planned: tasks.map(plannedEntry) })
 
 const numbersText = (numbers: number[]) => (numbers.length === 0 ? 'none' : numbers.map(number => `#${number}`).join(', '))
 

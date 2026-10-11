@@ -16,7 +16,7 @@ const gh = args => execFileSync('gh', args, { encoding: 'utf8' })
 
 const jsonLines = text => text.split('\n').filter(line => line !== '').map(line => JSON.parse(line))
 
-const SUB_ISSUE_FIELDS = '.[] | {number,state,state_reason,title,body,updated_at}'
+const SUB_ISSUE_FIELDS = '.[] | {number,state,state_reason,title,body,created_at,updated_at}'
 
 export const subIssues = (repo, issue) => jsonLines(gh(['api', '--paginate', `repos/${repo}/issues/${issue}/sub_issues`, '--jq', SUB_ISSUE_FIELDS]))
 

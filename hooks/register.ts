@@ -526,9 +526,9 @@ async function applyIssueKickoff($: EngineInterface, milestone: number, startedA
   if ('missing' in ids) return `kickoff #${milestone} failed: missing ${ids.missing}`
   const changes = kickoffChanges(await readSubIssues($, github, milestone), planned.tasks)
   if ('rejected' in changes) return `kickoff #${milestone} rejected, nothing applied: ${changes.rejected}`
+  await $.fs.write(await projectPath($, `${RESULTS_DIR}/kickoff-${milestone}.json`), JSON.stringify(kickoffRecord(startedAt, planned.tasks), null, 2))
   const applied = await applyKickoffChanges($, github, ids, milestone, planned.tasks, changes)
   await writeMilestoneBody($, github, milestone, planned.milestone)
-  await $.fs.write(await projectPath($, `${RESULTS_DIR}/kickoff-${milestone}.json`), JSON.stringify(kickoffRecord(applied, startedAt), null, 2))
   return kickoffAnswer(milestone, applied)
 }
 
