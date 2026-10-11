@@ -83,4 +83,11 @@ The committed `.claude/ouroboros.json` is configuration, not runtime state; keep
 
 Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh` (no outside skill or plugin names, no absolute home paths, and none of the project names listed one per line in the untracked `.git/info/project-names`), `scripts/check_workflow_mirrors.mjs` (the workflow scripts cannot import, so their inline copies of the tested phase logic in `hooks/phase_review.ts` must match it), the plugin tests and `plugin validate`, and refuses the push on any failure.
 
+The milestone acceptance checks live in `scripts/acceptance/` and run from the checkout root with `node --experimental-strip-types --no-warnings`; `node --experimental-strip-types --no-warnings --test scripts/acceptance/` runs their own examples. They read GitHub, never write it, and take their inputs from the environment:
+
+- `OUROBOROS_SCRATCH_REPO` (`owner/name`) and `OUROBOROS_SCRATCH_ISSUE` (the milestone issue number): the scratch milestone whose open sub-issues are checked. Both missing makes every script exit 2 naming them.
+- `OUROBOROS_KICKOFF_RECORD`: the path of the kickoff record, by default `.claude/ouroboros/results/kickoff-<OUROBOROS_SCRATCH_ISSUE>.json`. The record is `{ "created": [n], "updated": [n], "dropped": [n], "left_closed": [n], "started_at": "<ISO 8601>" }`; a missing record exits 2 with `kickoff record not found: <path>`.
+
+`kickoff_creates.sh` checks every created number is an open sub-issue; `kickoff_rerun.sh` also checks the updated, dropped and left-closed ones and that no two open sub-issues share a title; `board_planned.sh` checks every open sub-issue sits in the planned column of the project named in `.claude/ouroboros.json`. `contract_sections.mjs` checks the seven contract sections of every open sub-issue, or of one body with `--body-file <path>`. Each prints one line per gap and exits 1 on any, 0 only when the inputs exist and no gap remains.
+
 Status: under construction.
