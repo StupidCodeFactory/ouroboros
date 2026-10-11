@@ -1,93 +1,61 @@
 # ouroboros
 
-**The dev loop that eats its own mistakes.**
+A Claude Code plugin that runs a milestone of work on a GitHub project board.
 
-A Claude Code plugin that runs a disciplined, self-improving development loop. Every phase's failures are logged, turned into evals, and rewritten into the skills and agents that caused them, so the next phase starts smarter:
+An architect turns a milestone from your PRD into sub-issues, each holding an implementation plan and a checklist of verifiable items. The loop then takes the sub-issues one at a time. The implementer works in its own worktree. The reviewer runs the checklist, and each item that passes gets ticked. Defects send the sub-issue back to In Progress with a comment, until the reviewer accepts it. An accepted sub-issue moves to Done and gets a PR, and the loop starts the next one.
 
-- **Workflows** (`workflows/`): `milestone-kickoff`, `phase`, `milestone-exit`, and `kickoff-phase`, which runs a kickoff and then the phase it planned in one run, handing the brief, the phase's tasks (with title, lane and touches from the kickoff) and the acceptance checks to the phase inline, so nothing has to write brief files or parse the plan in between; launch it by name with the kickoff args plus any phase args (`phase` for a later phase, `worktree`, `branch`, `test_db`, `models`). Kickoff runs one architect pass that reads the spec and plan once and returns the brief, the decisions and the phase-tagged tasks (fewer, larger tasks preferred), then the auditor writes the acceptance checks against that brief's names and commands, covering the goal, and commits them red; the brief's common part lists them, so the phase makes them green. The main session runs one workflow per phase; each phase implements its tasks with outside-in TDD through as few implementers as possible: tasks that share files form one chain done by one implementer in plan order, up to `tasks_per_implementer` tasks (default 4) each, the next implementer taking over from the previous one's handoff notes; disjoint chains run side by side in their own worktrees (up to `implementer_slots`, default 3, or one chain when the phase is pinned to a worktree) and are merged back in order; a task touching no files runs after every chain; fixes go to one fixer per chain; a merge conflict means the later task's implementer cherry-picks its own commits onto the merged branch and resolves them for both tasks' intent, re-implementing only when that fails; the merge step itself never resolves a conflict; a task or fix that comes back blocked in its worktree, e.g. a refused tool, runs again in place one at a time, and a task still blocked there is never passed as verified: the finished tasks are still reviewed and fixed; under `merge_policy: ask` the phase then checkpoints and opens its PR with each blocked task and its reason as an unchecked item, since the person merging is the gate, and the conductor accepts the blocked tasks' open boxes and names them when it reports the PR; under `architect` it escalates before the checkpoint; a step marked `(needs: <resource>)` never blocks a task), then, when it opens a phase PR, it merges the default branch's origin tip into the phase branch (a conflict escalates, never resolved by hand), so suite, review, fixes and checkpoint all see what the PR will merge; then the reviewer (correctness) and the architect (structure) review the whole phase diff once in parallel; fix rounds (at most three review rounds and two fix rounds in all) send each finding to its task's fixer together with the handoff note its implementer left (at most 300 words: decisions, gotchas, exact test commands, files left alone; also written to `.claude/ouroboros/handoffs/<milestone>-<phase>/<task>.md` so it survives a killed session); the fixer must address every finding and may reject one only by citing a test or code, which the reviewer rechecks; the phase result lists each fix as `{ task, round, mode, reason, outcome }`; `mode` is always `handoff` for now, and `reason` says why it is not `resume`. Continuing the original implementer instead waits on Claude Code (docs/upstream-requests.md) (fixes of tasks whose diffs share no file run side by side in worktrees and merge back like the tasks did) and re-check only the findings, with only the reviewers that own a still-open finding (plus the correctness reviewer when a fix reached other files), on Sonnet at medium effort, without re-reading the brief or their skills; the architect comes back only for its own findings, and the checkpoint runs on Sonnet; then it checkpoints, running the full suites of every lane whose `owned_paths` match a file the phase changed (from `git diff` against the merge base, never from task tags) (implementers run only the tests of the files they change; branch, merge and PR steps run on a small model at low effort; exit takes CI's result for the branch head instead of rerunning the suites). An agent that comes back empty (an overloaded API, a failed agent) is retried once before the stage gives up, and every agent must end or kill the background test commands it started before it returns. The checkpoint is the phase's one full-suite run: a red checkpoint gets one fix round, each failure sent to the task that broke it (by blame, else by the file its diff touched), and runs again; only a second red escalates. The conductor, not an agent, accepts a checkpoint: the reported checkpoint sha must be HEAD with a `phase(PN):` subject, and every box of the tasks the phase ran must be ticked; otherwise the phase escalates. A task whose boxes are all ticked is never launched again. Merges follow `merge_policy` in `.claude/ouroboros.json`: `ask` (the default) starts the milestone on a fresh `<branch_prefix><milestone>-<first phase>` branch from the default branch's origin tip at kickoff, opens each phase PR into the default branch, reports it and holds the next phase until you merge it; the conductor checks the PR with `gh` on each prompt (at most every five minutes, or at once with `/ouroboros resume`) and, once it is merged, starts the next phase on a fresh branch from the updated default branch, so no merge or rebase of the old branch is ever needed. `architect` opens no phase PRs; the architect merges the milestone PR at exit once every gate is green. While a run is live (stamped less than twelve hours ago), the main session cannot start another loop workflow (by name, by a copied phase script, or with milestone args) nor run `claude plugin update|install|uninstall`: the refusal gives the exact `Workflow({ scriptPath, resumeFromRunId })` call that resumes the run from its journal instead, and the conductor follows the resumed run's new task id. Nothing merges or rebases in the main session while a workflow is writing to the worktree; the workflow's own agents (its merge step) are not held by that guard, and neither is a retro nor a run marker older than twelve hours (or never stamped with a start time), so a run that ended unseen never blocks merges for good.
-- **Agents** (`agents/`): architect, auditor, reviewer, implementer, skill-curator, adr-scribe. Persistent memory lives in each project's `.claude/agent-memory/`.
-- **Retro** (`agents/skill-curator.md`): after every phase result the curator turns open incidents into eval-proven skill and agent rewrites, prunes agent memory that points at gone files, and slims every eager file over a third of `eager_skills_max_chars`: what a role needs only for some tasks moves into categorized project skills (`domain-*`, `code-style-*`, `testing-*`) loaded on demand, and leaves the role's `eager_skills`.
-- **Skills** (`skills/`): generic process skills that the loop rewrites after every phase when an agent misreads or misuses them, each change proven by an eval.
-- **Hooks** (`hooks/`): incident capture, retro gate (implementers and phases wait while the project's own skills have open incidents; the plugin's own backlog never blocks a project, only work on the plugin itself), agent rollover, ADR scribe, planning lessons, status line, and the conductor: a state machine in `.claude/ouroboros/state.json` that files every workflow result under `.claude/ouroboros/results/`, files every skill-gap, skill-misread, skill-misuse and agent-behaviour finding of a phase result as an incident (workflow-started reviewers never reach the main session), lists review findings about code outside a task's diff on the phase PR as unchecked boxes to check before merging, appends them to the plan as a `### Task <id>-<PN>-follow-ups` task tagged with the next phase (untagged after the last phase), starts the retro after every phase result, and hands the next `Workflow` launch to the main session as one line (a command such as kickoff, resume or collect submits it as a prompt once the command has returned; a result or a noticed merge puts it in the turn already running). `/ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [goal]` answer from that state without the model. Resume and kickoff first drop a pending launch whose work already ran (a recorded result, or a brief on disk with every phase carrying tasks; a `phase(PN)` commit with no open box in PN) and say why. `/ouroboros adopt <task-id> <workflow> [phase]` records a run started outside the conductor as in flight, and `/ouroboros set phase <PN>` / `set status <status>` repair the position; each prints the state before and after, so state.json never needs hand edits. `/ouroboros collect <output-file>` files a workflow result whose notification never reached the conductor: the in-flight run's result moves the loop on exactly as its notification would have (incidents, follow-ups, retro); any other run's result only files its incidents. With only a milestone, kickoff discovers the drafts under `drafts_dir`: the newest file with `### Task` headings and checkboxes that names the milestone is the plan, and its `Spec:` line (or the file sharing its name) is the spec. Kickoff refuses to start without a `.claude/ouroboros.json`. `--phase <PN>` kicks off one later phase of a milestone that already ran: the planner appends `## Part C: <milestone> <PN> tasks`, numbered after the highest task id and all tagged `(<PN>)`, the briefs go to `briefs/<milestone>-<PN>/`, and only that phase runs.
-
-Project-specific configuration lives in the project's `.claude/ouroboros.json` and its own domain skills.
-
-Once any task carries a phase tag, an untagged task never runs: the planner tags every task it adds (the acceptance-checks task with the first phase), and kickoff names any untagged task that still has open boxes. Specs and plans are ordinary markdown drafts: `### Task <id>: <title> (PN)` headings (or `(PN, <lane>)` to pin a task's lane) and `- [ ]` boxes under `drafts_dir` in the main checkout, read the same way from any worktree.
-
-Incidents land where the curator can fix them: a project skill's in `<project>/.claude/skills/<skill>/incidents.md`; a plugin skill's or agent's in the plugin checkout only when it is a writable git checkout (`skills/<skill>/incidents.md`, `incidents/agents/<agent>.md`; never under `agents/`, where every markdown file is read as an agent definition), otherwise in `<project>/.claude/ouroboros/plugin-incidents/<plugin>/{skills,agents}/` for the curator to turn into a patch. Agent names are folded onto the plugin agent that plays them (`implementer-ruby`, `implementer:ruby` and `architect-m1` are the implementer and the architect; the planner is the architect). A process finding that names no skill or agent goes to `plugin-incidents/<plugin>/unowned.md`, where the curator gives it an owner or closes it; none is dropped. Every loop workflow's findings are filed, its own top-level `findings` as well as its tasks'. Evidence is written relative to the project. Plan drift (a draft edited after kickoff) is not a skill incident: the ADR scribe notes it on the active ADR, and it never counts toward the retro gate.
-
-A step that needs something only a person has ends with `(needs: <resource>)`: it never counts as open work, the checkpoint skips it, and the phase PR lists it as an unchecked item. Progress is never kept in conversation memory: every plan task and step is a `- [ ]` checkbox, agents start from the first unchecked box and tick each one in the commit that verifies it (`skills/checkbox-progress`).
+The design is in [docs/specs/2026-10-11-github-milestone-loop.md](docs/specs/2026-10-11-github-milestone-loop.md).
 
 ## Install
-
-On any machine, add the marketplace and install:
 
 ```bash
 claude plugin marketplace add StupidCodeFactory/ouroboros
 claude plugin install ouroboros@ouroboros
 ```
 
-If the plugin gets loaded twice (an installed copy plus a stale `--plugin-dir` or dev link), the instance loaded first refuses the second at `plugin.register` and toasts both roots, so every hook runs once. The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `env` of `~/.claude/settings.json`. To develop the plugin, point `CLAUDE_CODE_PLUGIN_DIRS` at a checkout instead of installing it; never do both, or every hook runs twice.
+The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `env` of `~/.claude/settings.json`.
 
-## Project setup
+## Setup
 
-Commit a `.claude/ouroboros.json` naming the lanes (owned paths, test and lint commands, lint baseline, lane skills), each agent's eager skills, the planning skills, `adr_dir` and `drafts_dir`. Put language and domain rules in the project's own `.claude/skills/`; the plugin's skills stay project-agnostic. ouroboros hardcodes no skill or plugin from outside itself: every skill an agent loads is named here.
+1. Create a GitHub project with a single-select `Status` field holding the columns `Milestones`, `Planned`, `In Progress`, `QA` and `Done`.
+2. Create the label `needs-owner` in the repository.
+3. Write a PRD with one heading per milestone, for example `### M1. Sign-in`.
+4. Open one issue per milestone with that heading as its title, and put it in the Milestones column.
+5. Commit `.claude/ouroboros.json`:
 
 ```json
 {
-  "lanes": {
-    "ruby": { "owned_paths": ["lib/**", "spec/**"], "test": "bundle exec rspec", "lint": "bundle exec rubocop", "lint_baseline": 0 }
-  },
-  "agents": {
-    "architect": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "ouroboros:findings-contract", "ouroboros:adr-format", "your-plugin:design"] },
-    "implementer": {
-      "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "your-plugin:tdd"],
-      "lanes": { "ruby": { "eager_skills": ["ruby-spec-conventions"] } }
-    },
-    "reviewer": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:findings-contract", "your-plugin:code-review"] },
-    "auditor": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:findings-contract"] },
-    "adr-scribe": { "eager_skills": ["ouroboros:checkbox-progress", "ouroboros:adr-format"] },
-    "skill-curator": { "eager_skills": ["your-plugin:writing-skills"] }
-  },
-  "planning_skills": ["your-plugin:brainstorm", "your-plugin:write-plan"],
-  "eager_skills_max_chars": 60000,
-  "effort": { "brief": "high", "implement": "high", "review": "high", "audit": "medium", "checkpoint": "low" },
-  "adr_dir": "docs/adr",
-  "drafts_dir": "docs/drafts"
+  "prd": "docs/prd.md",
+  "github": {
+    "repo": "owner/repo",
+    "project": "My board",
+    "status_field": "Status",
+    "columns": { "milestones": "Milestones", "planned": "Planned", "in_progress": "In Progress", "qa": "QA", "done": "Done" },
+    "labels": { "needs_owner": "needs-owner" }
+  }
 }
 ```
 
-`agents.<agent>.eager_skills` (plus `lanes.<lane>.eager_skills` for implementers) is the only source of skills an agent loads; an agent the project lists nothing for gets ouroboros's own process skills for its role. `planning_skills` names the skills whose prompt gets the planning lessons appended; empty or missing means the planning hook never fires. `drafts_dir` is where `isDraftPath` looks for `specs/` and `plans/`.
+Everything but `github.project` has the default shown. `branch_prefix` (default `work/`) sets the prefix of task branches. `gh` must be logged in as an account that can edit the repository's issues and the project.
 
-`lanes.<lane>.env_notes` (a list of lines: database and cache URLs, how to run the lane's tests, which wrappers to use) is appended to that lane's implementer eager file and to the auditor's, so no agent rediscovers its test setup. An optional `models` map (`{ "implementer": "opus", "reviewer": …, "architect": …, "auditor": … }`) overrides the model each role's agents run on, passed to every workflow as `args.models`: implementers, their fixers and rebasers, the first review round, the checkpoint, and kickoff's architect and auditor; an unset role keeps its agent definition's model, and the cheap git and recheck steps keep theirs. An optional `effort` map sets the reasoning effort per workflow stage; the conductor passes it to every workflow it launches as `args.effort`, and a stage left out inherits the session effort. Stages: `brief`, `implement`, `review`, `architect_review`, `audit`, `fix`, `planner`, `checkpoint`, `merge`; values: `low`, `medium`, `high`, `xhigh`, `max`.
+## Use
 
-Before a phase with a sliced brief implements anything, a small architect agent checks what merged into the default branch since the brief's `common.md` was written and appends a `Landed since this brief` section when those merges change names or APIs the phase's tasks use. Workflows take everything else through `args`: `milestone-kickoff` gets `{ milestone, goal, spec, plan }`, `phase` gets `{ milestone, phase, brief_dir, tasks }` with each task's `touches` from its brief slice (else, for a lane-tagged task, its lane's `owned_paths`, so tasks of different lanes still run side by side; globs overlap when one's fixed prefix contains the other's) and its `lane` (the heading's lane tag, else the lane whose `owned_paths` own most of its touched files), so one phase mixes lanes and checkpoints once after all of them (or `brief_path`, or an inline `brief` when no brief file exists; a long brief belongs in a file, never inline) (the conductor derives `tasks` from the plan's `(PN)` tags), `milestone-exit` gets `{ milestone }`. Tasks whose commits already landed in an earlier run go in `landed` (`[{ id, title }]`): one small agent gathers all their commits and hunks at once, from their handoff notes and git, and they are suite-run, reviewed, fixed and checkpointed with the rest. A task titled as the phase checkpoint (`PN checkpoint`) is skipped, the checkpoint stage does that work, and a task whose `touches` is empty runs after every task before it. Every `test_db` in a launch's args (at any depth) is recorded in the shared git directory, `ouroboros/test-resources.json`, until the run's result is filed or twelve hours pass; a launch whose test databases sit on the same host and port as another live run's is warned about, since runs on one server can flush or race each other. The workflow tool only runs scripts you can already read, so a parent script cannot load `workflows/phase.js` from the plugin cache by `scriptPath`: copy it next to your script for that plugin version. To drive several milestones from one session, give each phase run `worktree`, `branch` and `test_db`: every agent prompt then starts in that worktree against that test database, and tasks run in place one at a time there instead of in parallel worktrees. `milestone-exit` gets `{ milestone }`. Workflow agents are the plugin's own (`ouroboros:<agent>`); skills reach them only through the project config's per-agent lists.
+| Command | Does |
+|---|---|
+| `/ouroboros kickoff <milestone-issue>` | The architect plans the milestone. The hook writes its body and creates, updates or drops sub-issues in Planned. Rerun it to revise the plan. |
+| `/ouroboros start <milestone-issue>` | Runs the loop: the next ready sub-issue, then the one after, until none is left or one needs you. |
+| `/ouroboros status` | Shows the milestone, the stage and the sub-issue in progress. |
+| `/ouroboros stop` | Stops following the running agent. `start` resumes. |
 
-## Runtime state
+A sub-issue needs you (`needs-owner` label plus a comment) in three cases: its body is incomplete, the implementer is blocked, or three review rounds end without acceptance. Fix the cause, remove the label and run `start` again.
 
-ouroboros writes its runtime state under `.claude/ouroboros/` at the repository root. It is local to each checkout or worktree, and the conductor drops a `.claude/ouroboros/.gitignore` holding `*` so the directory ignores itself; to say so in the project too, add it to the project's `.gitignore`:
-
-```gitignore
-.claude/ouroboros/
-```
-
-- `state.json`: the conductor's loop state (milestone, phases, current phase, pending launch, run in flight, escalations).
-- `results/`: the full result of every loop workflow, plus every oversized result of a plugin agent or loop workflow, each filed by task or tool-use id.
-- `eager/`: each role's eager skills block (`<role>.md`, `implementer-<lane>.md`), written before a loop workflow launches and read by its agents first.
-- `briefs/`: the architect brief of each milestone kickoff: `<milestone>/common.md` (forbidden list, review gates, shared constraints) and `<milestone>/<task id>.md` (where the task's code goes, what to reuse, the files it touches). Phases get the directory as `brief_dir` and each agent reads the common file plus its own task's slice. A kickoff that returned one plain-text brief files it as `<milestone>.md` and passes `brief_path`.
-- `spawns.jsonl`: one line per agent spawn with the skills inlined and their hashes.
-
-The committed `.claude/ouroboros.json` is configuration, not runtime state; keep it under version control.
+Every accepted sub-issue gets a PR closing it. While a PR is open, the next sub-issue stacks on its branch. Merge the PRs in order.
 
 ## Development
 
-Run `scripts/install-hooks.sh` once after cloning: the pre-push hook runs `scripts/guard_no_outside_skills.sh` (no outside skill or plugin names, no absolute home paths, and none of the project names listed one per line in the untracked `.git/info/project-names`), `scripts/check_workflow_mirrors.mjs` (the workflow scripts cannot import, so their inline copies of the tested phase logic in `hooks/phase_review.ts` must match it), the plugin tests and `plugin validate`, and refuses the push on any failure.
+```bash
+./scripts/install-hooks.sh
+./scripts/pre-push
+```
 
-The milestone acceptance checks live in `scripts/acceptance/` and run from the checkout root with `node --experimental-strip-types --no-warnings`; `node --experimental-strip-types --no-warnings --test 'scripts/acceptance/*.test.mjs'` runs their own examples. They read GitHub, never write it, and take their inputs from the environment:
-
-- `OUROBOROS_SCRATCH_REPO` (`owner/name`) and `OUROBOROS_SCRATCH_ISSUE` (the milestone issue number): the scratch milestone whose open sub-issues are checked. Both missing makes every script exit 2 naming them.
-- `OUROBOROS_KICKOFF_RECORD`: the path of the kickoff record, by default `.claude/ouroboros/results/kickoff-<OUROBOROS_SCRATCH_ISSUE>.json`. The record is `{ "started_at": "<ISO 8601>", "planned": [{ "issue": n, "title": "…" }] }`, the plan kickoff applied (`issue` only for a revised sub-issue); the checks read what was created, updated and dropped from GitHub, by `created_at` and `updated_at` against `started_at`. A missing record exits 2 with `kickoff record not found: <path>`.
-
-`kickoff_creates.sh` checks every created number is an open sub-issue; `kickoff_rerun.sh` also checks the updated, dropped and left-closed ones and that no two open sub-issues share a title; `board_planned.sh` checks every open sub-issue sits in the planned column of the project named in `.claude/ouroboros.json`. `contract_sections.mjs` checks the seven contract sections of every open sub-issue, or of one body with `--body-file <path>`. Each prints one line per gap and exits 1 on any, 0 only when the inputs exist and no gap remains.
-
-Status: under construction.
+`pre-push` runs `claude plugin test .` and validates the manifest.

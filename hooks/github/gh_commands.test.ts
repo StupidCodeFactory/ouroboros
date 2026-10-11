@@ -2,8 +2,10 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   KICKOFF_DROPPED_COMMENT,
+  addLabelCommand,
   addToBoardCommand,
   boardIdsOf,
+  commentCommand,
   createSubIssueCommand,
   creationOrder,
   dropCommand,
@@ -11,6 +13,7 @@ import {
   githubConfigOf,
   issueOfPosition,
   linkSubIssueCommand,
+  pullRequestCommand,
   setColumnCommand,
 } from './gh_commands'
 import type { PlannedTask } from './kickoff_plan'
@@ -42,9 +45,6 @@ const task = (title: string, depends_on: PlannedTask['depends_on'] = []): Planne
   goal: 'g',
   plan: 'p\nFiles: `a`',
   checklist: [{ text: 't', command: 'c', done: false }],
-  completion: ['c'],
-  stop: 's',
-  must_not: 'm',
   depends_on,
 })
 
@@ -123,4 +123,22 @@ test('a dependency by place in the list names the revised issue or the issue jus
   const issueOf = issueOfPosition(tasks, new Map([[2, 21]]))
 
   expect([issueOf(1), issueOf(2)]).toEqual([11, 21])
+})
+
+test('a comment goes on the issue with its text on stdin', () => {
+  expect(commentCommand(REPO, 12, '## Review found defects')).toEqual({
+    argv: ['gh', 'issue', 'comment', '12', '-R', REPO, '--body-file', '-'],
+    stdin: '## Review found defects',
+  })
+})
+
+test('the needs-owner label is added by its configured name', () => {
+  expect(addLabelCommand(REPO, 12, 'needs-owner')).toEqual({ argv: ['gh', 'issue', 'edit', '12', '-R', REPO, '--add-label', 'needs-owner'] })
+})
+
+test('the pull request targets its base, heads the task branch and closes the sub-issue', () => {
+  expect(pullRequestCommand(REPO, { base: 'main', head: 'work/12-page-list', title: 'Page list', number: 12 })).toEqual({
+    argv: ['gh', 'pr', 'create', '-R', REPO, '--base', 'main', '--head', 'work/12-page-list', '--title', 'Page list', '--body-file', '-'],
+    stdin: 'Closes #12\n',
+  })
 })

@@ -1,7 +1,7 @@
 #!/bin/sh
 cd "$(dirname "$0")/.." || exit 1
-PLUGIN_PATHS='agents hooks skills workflows scripts README.md'
-outside_skills=$(grep -rniE 'caveman|ponytail|superpowers|mattpocock' agents hooks skills workflows README.md --exclude=incidents.md)
+PLUGIN_PATHS='agents hooks workflows scripts README.md'
+outside_skills=$(grep -rniE 'caveman|ponytail|superpowers|mattpocock' agents hooks workflows README.md)
 home_paths=$(grep -rnE '/(Users|home)/[A-Za-z0-9_-]+/' $PLUGIN_PATHS)
 names_file=$(git rev-parse --git-path info/project-names 2>/dev/null)
 project_names=''

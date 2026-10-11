@@ -3,18 +3,14 @@ export type TaskContract = {
   goal: string
   plan: string
   checklist: CommandItem[]
-  completion: string[]
-  stop: string
-  must_not: string
   depends_on: number[]
 }
 export type MilestoneBody = { goal: string; brief: string; acceptance: CommandItem[] }
 
-const TASK_SECTIONS = ['Goal', 'Plan', 'Checklist', 'Completion condition', 'Stop conditions', 'Must not', 'Depends on'] as const
+const TASK_SECTIONS = ['Goal', 'Plan', 'Checklist', 'Depends on'] as const
 const MILESTONE_SECTIONS = ['Goal', 'Brief', 'Acceptance'] as const
 const SECTION_HEADING = /^## (.+)$/m
 const COMMAND_ITEM = /^- \[( |x)\] (.+): `([^`]+)`$/
-const COMPLETION_ITEM = /^- `([^`]+)`$/
 const FILES_LINE = /^Files: .*`[^`]+`/m
 const DEPENDS_ON = /^(none|#\d+(?:, #\d+)*)$/
 
@@ -41,10 +37,6 @@ const commandItemOf = (line: string): CommandItem | undefined => {
 
 const parseCommandItems = (text: string) => allOrNothing(linesOf(text).map(commandItemOf))
 
-const renderCompletion = (commands: string[]) => commands.map(command => `- \`${command}\``).join('\n')
-
-const parseCompletion = (text: string) => allOrNothing(linesOf(text).map(line => COMPLETION_ITEM.exec(line)?.[1]))
-
 export const parseDependsOn = (text: string) => {
   const match = DEPENDS_ON.exec(text.trim())
   if (match === null) return undefined
@@ -58,16 +50,12 @@ export const renderTaskBody = (task: TaskContract) =>
     ['Goal', task.goal],
     ['Plan', task.plan],
     ['Checklist', renderCommandItems(task.checklist)],
-    ['Completion condition', renderCompletion(task.completion)],
-    ['Stop conditions', task.stop],
-    ['Must not', task.must_not],
     ['Depends on', renderDependsOn(task.depends_on)],
   ])
 
 const SECTION_CHECKS: Record<string, (text: string) => boolean> = {
   Plan: text => FILES_LINE.test(text),
   Checklist: text => parseCommandItems(text) !== undefined,
-  'Completion condition': text => parseCompletion(text) !== undefined,
   'Depends on': text => parseDependsOn(text) !== undefined,
   Acceptance: text => parseCommandItems(text) !== undefined,
 }
@@ -91,9 +79,6 @@ export const parseTaskBody = (body: string): TaskContract | undefined => {
     goal: section('Goal'),
     plan: section('Plan'),
     checklist: parseCommandItems(section('Checklist')) ?? [],
-    completion: parseCompletion(section('Completion condition')) ?? [],
-    stop: section('Stop conditions'),
-    must_not: section('Must not'),
     depends_on: parseDependsOn(section('Depends on')) ?? [],
   }
 }

@@ -48,6 +48,22 @@ export const dropCommand = (repo: string, number: number): GhCommand => ({
   argv: ['gh', 'issue', 'close', String(number), '-R', repo, '--reason', 'not planned', '--comment', KICKOFF_DROPPED_COMMENT],
 })
 
+export const commentCommand = (repo: string, number: number, text: string): GhCommand => ({
+  argv: ['gh', 'issue', 'comment', String(number), '-R', repo, '--body-file', '-'],
+  stdin: text,
+})
+
+export const addLabelCommand = (repo: string, number: number, label: string): GhCommand => ({
+  argv: ['gh', 'issue', 'edit', String(number), '-R', repo, '--add-label', label],
+})
+
+export type PullRequest = { base: string; head: string; title: string; number: number }
+
+export const pullRequestCommand = (repo: string, pr: PullRequest): GhCommand => ({
+  argv: ['gh', 'pr', 'create', '-R', repo, '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body-file', '-'],
+  stdin: `Closes #${pr.number}\n`,
+})
+
 export const addToBoardCommand = (owner: string, ids: BoardIds, issueUrl: string): GhCommand => ({
   argv: ['gh', 'project', 'item-add', String(ids.project_number), '--owner', owner, '--url', issueUrl, '--format', 'json', '--jq', '.id'],
 })

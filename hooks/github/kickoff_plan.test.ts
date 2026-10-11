@@ -8,9 +8,6 @@ const CONTRACT = {
   goal: 'Owners see their Page.',
   plan: '1. Red. 2. Green.\nFiles: `app/**`',
   checklist: [{ text: 'the list shows the Page', command: 'bin/rspec spec/requests/pages_spec.rb', done: false }],
-  completion: ['bin/rspec'],
-  stop: '- Meta disagrees with the spec: stop and ask.',
-  must_not: '- No new gem.',
 }
 
 const planned = (title: string, extra: Partial<PlannedTask> = {}): PlannedTask => ({ title, ...CONTRACT, depends_on: [], ...extra })
@@ -81,7 +78,7 @@ test('a dependency on a closed sub-issue is allowed', () => {
 })
 
 test('a task with a contract gap is rejected with the sections it misses', () => {
-  expect(kickoffChanges([], [planned('Search', { must_not: ' ', checklist: [] })])).toEqual({ rejected: 'task 1 "Search" misses Checklist, Must not' })
+  expect(kickoffChanges([], [planned('Search', { goal: ' ', checklist: [] })])).toEqual({ rejected: 'task 1 "Search" misses Goal, Checklist' })
   expect(kickoffChanges([], [planned('Search', { plan: '1. Red.' })])).toEqual({ rejected: 'task 1 "Search" misses Plan' })
 })
 
