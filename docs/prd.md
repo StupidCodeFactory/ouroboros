@@ -56,6 +56,7 @@ Acceptance:
 - Every stage change is visible on the sub-issue as a short comment, so the board alone explains its history: `claude plugin test . 2>&1 | grep -F "(pass) every stage change comments on the sub-issue"`
 - A `gh` failure stops the loop with the failing command and its error, and leaves GitHub as it was before the stage: `claude plugin test . 2>&1 | grep -F "(pass) a gh failure stops the loop and names the command"`
 - A push from any worktree runs that worktree's own `scripts/pre-push` against its own files, never the main checkout's (today `core.hooksPath` holds the main checkout's absolute `scripts` path, so pushes were tested against a stale `main`): `scripts/acceptance/pre_push_own_checkout.sh`
+- An accepted sub-issue stays open until its PR merges; only the merge closes it. Today the board's built-in "Auto-close issue" workflow closes it the moment the loop moves it to Done, so a rejected PR leaves its issue closed. `/ouroboros doctor` names that workflow when it is on: `claude plugin test . 2>&1 | grep -F "(pass) doctor names the auto-close workflow that closes a sub-issue before its PR merges"`
 - The plugin's tests pass: `./scripts/pre-push`
 
 ### M3. Native milestones and releases
