@@ -59,7 +59,7 @@ const EAGER_DIR = '.claude/ouroboros/eager'
 const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <issue> | kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <issue> (7, #7 or the issue URL) | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file> | legacy plan-file kickoff: kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -460,7 +460,7 @@ const briefKey = (state: LoopState) => (state.kickoff_phase === undefined ? stat
 
 async function kickoff($: EngineInterface, args: string) {
   const parsed = kickoffArgs(args)
-  if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]'
+  if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <issue> (7, #7 or the issue URL), or legacy plan-file kickoff: /ouroboros kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]'
   if (!(await hasConfig($))) return MISSING_CONFIG
   const discovery = await resolveDrafts($, parsed.milestone, parsed)
   if ('error' in discovery) return discovery.error
