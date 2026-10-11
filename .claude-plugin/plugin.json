@@ -1,9 +1,7 @@
 {
   "name": "ouroboros",
-  "version": "0.22.1",
-  "description": "The dev loop that eats its own mistakes: milestone and phase workflows, long-lived specialist agents, and skills that rewrite themselves after every phase, each change proven by an eval.",
-  "workflows": "./workflows",
-  "types": "./types/index.d.ts",
+  "version": "0.23.0",
+  "description": "GitHub milestone loop: an architect turns PRD milestones into sub-issues with checklists; each sub-issue is implemented, reviewed until its checklist passes, and moved across the project board.",
   "author": {
     "name": "StupidCodeFactory"
   }

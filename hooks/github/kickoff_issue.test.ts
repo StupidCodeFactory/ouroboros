@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { architectResult, kickoffAnswer, kickoffIssueNumber, kickoffRecord, milestoneColumn, prdSection } from './kickoff_issue'
+import { architectResult, kickoffAnswer, kickoffIssueNumber, milestoneColumn, prdSection } from './kickoff_issue'
 
 const PRD = [
   '# Product',
@@ -20,9 +20,6 @@ const TASK = {
   goal: 'g',
   plan: 'p\nFiles: `app/**`',
   checklist: [{ text: 'the list shows', command: 'bin/rspec spec/a_spec.rb' }],
-  completion: ['bin/rspec'],
-  stop: 's',
-  must_not: 'm',
   depends_on: [{ issue: 10 }, { task: 2 }],
 }
 
@@ -70,13 +67,6 @@ test('the architect result reads into a milestone body and planned tasks, nothin
 test('an architect result without a milestone or tasks is an error', () => {
   expect(architectResult(undefined)).toEqual({ error: 'the architect returned no milestone body and task list' })
   expect(architectResult({ tasks: [] })).toEqual({ error: 'the architect returned no milestone body and task list' })
-})
-
-test('the kickoff record holds the start and the planned tasks, by issue when they revise one', () => {
-  expect(kickoffRecord(Date.UTC(2026, 9, 11, 12), [{ ...TASK, issue: 12 }, { ...TASK, title: 'Search' }] as never)).toEqual({
-    started_at: '2026-10-11T12:00:00.000Z',
-    planned: [{ issue: 12, title: 'Page list' }, { title: 'Search' }],
-  })
 })
 
 test('the kickoff answer names every sub-issue by what happened to it', () => {

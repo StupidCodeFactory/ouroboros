@@ -1,6 +1,6 @@
 {
   "name": "ouroboros",
-  "description": "Ouroboros: a self-improving agent dev loop for Claude Code.",
+  "description": "Ouroboros: a GitHub milestone loop for Claude Code.",
   "owner": {
     "name": "StupidCodeFactory"
   },
@@ -8,7 +8,7 @@
     {
       "name": "ouroboros",
       "source": "./",
-      "description": "The dev loop that eats its own mistakes."
+      "description": "Milestones to sub-issues to reviewed PRs, on a GitHub project board."
     }
   ]
 }

@@ -9,9 +9,6 @@ const TASK = {
     { text: 'the list shows the Page', command: 'bin/rspec spec/requests/pages_spec.rb:4', done: true },
     { text: 'an empty list says so', command: 'bin/rspec spec/requests/pages_spec.rb:12', done: false },
   ],
-  completion: ['bin/rspec', 'bin/rubocop'],
-  stop: '- Meta returns a shape the spec does not name: stop and ask.',
-  must_not: '- No new gem.',
   depends_on: [6, 8],
 }
 
@@ -24,7 +21,7 @@ const MILESTONE = {
   ],
 }
 
-const SECTION_NAMES = ['## Goal', '## Plan', '## Checklist', '## Completion condition', '## Stop conditions', '## Must not', '## Depends on']
+const SECTION_NAMES = ['## Goal', '## Plan', '## Checklist', '## Depends on']
 
 const withSection = (body: string, name: string, text: string) => body.replace(new RegExp(`## ${name}\\n[\\s\\S]*?(?=\\n## |$)`), `## ${name}\n${text}\n`)
 
@@ -35,7 +32,6 @@ test('a rendered task body parses back to the same task', () => {
 
   expect(body.match(/^## .+$/gm)).toEqual(SECTION_NAMES)
   expect(body).toContain('- [x] the list shows the Page: `bin/rspec spec/requests/pages_spec.rb:4`')
-  expect(body).toContain('## Completion condition\n- `bin/rspec`\n- `bin/rubocop`')
   expect(body).toContain('## Depends on\n#6, #8')
   expect(parseTaskBody(body)).toEqual(TASK)
 })
@@ -51,18 +47,17 @@ test('contract gaps name every missing or empty section', () => {
   const body = renderTaskBody(TASK)
 
   expect(contractGaps(body)).toEqual([])
-  expect(contractGaps(withoutSection(body, 'Must not'))).toEqual(['Must not'])
-  expect(contractGaps(withSection(withSection(body, 'Goal', '   '), 'Stop conditions', ''))).toEqual(['Goal', 'Stop conditions'])
-  expect(contractGaps('')).toEqual(['Goal', 'Plan', 'Checklist', 'Completion condition', 'Stop conditions', 'Must not', 'Depends on'])
-  expect(parseTaskBody(withoutSection(body, 'Must not'))).toBeUndefined()
+  expect(contractGaps(withoutSection(body, 'Goal'))).toEqual(['Goal'])
+  expect(contractGaps(withSection(withSection(body, 'Goal', '   '), 'Depends on', ''))).toEqual(['Goal', 'Depends on'])
+  expect(contractGaps('')).toEqual(['Goal', 'Plan', 'Checklist', 'Depends on'])
+  expect(parseTaskBody(withoutSection(body, 'Goal'))).toBeUndefined()
 })
 
-test('a checklist or completion item without a command is a gap', () => {
+test('a checklist item without a command is a gap', () => {
   const body = renderTaskBody(TASK)
 
   expect(contractGaps(withSection(body, 'Checklist', '- [ ] the list shows the Page'))).toEqual(['Checklist'])
   expect(contractGaps(withSection(body, 'Checklist', 'no boxes here'))).toEqual(['Checklist'])
-  expect(contractGaps(withSection(body, 'Completion condition', '- the suite passes'))).toEqual(['Completion condition'])
 })
 
 test('a plan without a Files line naming at least one path is a gap', () => {
