@@ -10,6 +10,7 @@ const FINDINGS_BLOCK = [
 const SKILL_LOG = '.claude/skills/example-domain/incidents.md'
 
 const incidentGrepAnswer = (argv: readonly string[]) => {
+  if (argv.includes('--show-toplevel')) return '/project\n'
   if (argv[0] === 'git') return 'phase(P2): add invoice export'
   if (argv[1] === '-rc') return 'docs/adr/0001-queue.md:1\n'
   return '| 2026-10-03 | P0 | auditor | skill-gap | | nothing pins the fail-loudly raise | | open | |\n'
