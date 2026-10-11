@@ -55,6 +55,7 @@ Acceptance:
 - With no local state, as in another checkout or after the state file is lost, `/ouroboros start` takes an open sub-issue in In Progress or QA from the board before anything in Planned, and reuses its existing branch instead of resetting it: `claude plugin test . 2>&1 | grep -F "(pass) start resumes an In Progress or QA sub-issue from the board without local state"`
 - Every stage change is visible on the sub-issue as a short comment, so the board alone explains its history: `claude plugin test . 2>&1 | grep -F "(pass) every stage change comments on the sub-issue"`
 - A `gh` failure stops the loop with the failing command and its error, and leaves GitHub as it was before the stage: `claude plugin test . 2>&1 | grep -F "(pass) a gh failure stops the loop and names the command"`
+- A push from any worktree runs that worktree's own `scripts/pre-push` against its own files, never the main checkout's (today `core.hooksPath` holds the main checkout's absolute `scripts` path, so pushes were tested against a stale `main`): `scripts/acceptance/pre_push_own_checkout.sh`
 - The plugin's tests pass: `./scripts/pre-push`
 
 ### M3. Native milestones and releases
