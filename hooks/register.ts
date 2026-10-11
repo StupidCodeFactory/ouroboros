@@ -424,7 +424,7 @@ async function noticedMerge($: EngineInterface, state: LoopState) {
   return `${waiting.pr_url} merged; ${await continueLoop($, released, 'note-only')}`
 }
 
-const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
+const MISSING_CONFIG = 'no .claude/ouroboros.json at the checkout root: create one (plugin README, Project setup) or open the session in the checkout that has it'
 
 async function draftFiles($: EngineInterface, draftsRoot: string): Promise<DraftFile[]> {
   const { stdout } = await $.process.run(['sh', '-c', 'cd "$1" && find . -name "*.md" -type f -print0 | xargs -0 -r ls -t', 'sh', draftsRoot])
@@ -452,7 +452,7 @@ const briefKey = (state: LoopState) => (state.kickoff_phase === undefined ? stat
 async function kickoff($: EngineInterface, args: string) {
   const parsed = kickoffArgs(args)
   if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]'
-  if (!(await $.fs.exists(CONFIG_PATH))) return MISSING_CONFIG
+  if (!(await hasConfig($))) return MISSING_CONFIG
   const discovery = await resolveDrafts($, parsed.milestone, parsed)
   if ('error' in discovery) return discovery.error
   const { spec, plan } = discovery.drafts
@@ -769,9 +769,13 @@ async function skillIndex($: EngineInterface): Promise<SkillIndex> {
   return value ?? buildSkillIndex($)
 }
 
+async function hasConfig($: EngineInterface) {
+  return $.fs.exists(await projectPath($, CONFIG_PATH))
+}
+
 async function readConfig($: EngineInterface): Promise<OuroborosConfig> {
-  if (!(await $.fs.exists(CONFIG_PATH))) return {}
-  return JSON.parse(await $.fs.read(CONFIG_PATH))
+  if (!(await hasConfig($))) return {}
+  return JSON.parse(await $.fs.read(await projectPath($, CONFIG_PATH)))
 }
 
 export async function mainCheckoutRoot($: EngineInterface) {

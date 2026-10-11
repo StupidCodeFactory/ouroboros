@@ -902,8 +902,7 @@ test('an oversized result from an agent outside the loop passes through whole', 
   expect(written.size).toBe(0)
 })
 
-test('a session whose cwd moved into a subdirectory still writes the runtime directory under the checkout root', async ($, on) => {
-  const files: Record<string, string> = { '.claude/ouroboros.json': CONFIG, '/project/docs/drafts/plans/m1.md': PLAN }
+const subdirectoryWorld = (on: On, files: Record<string, string>) => {
   const written = new Map<string, string>()
   const fileAt = (path: string) => Object.entries(files).find(([name]) => path.endsWith(name))?.[1]
   on('process.run', (_, e) => {
@@ -918,9 +917,22 @@ test('a session whose cwd moved into a subdirectory still writes the runtime dir
     return { value: undefined }
   })
   on('ui.toast', () => ({ value: undefined }))
+  return written
+}
+
+test('a session whose cwd moved into a subdirectory still writes the runtime directory under the checkout root', async ($, on) => {
+  const written = subdirectoryWorld(on, { '.claude/ouroboros.json': CONFIG, '/project/docs/drafts/plans/m1.md': PLAN })
 
   await run($, 'kickoff M1 specs/m1.md plans/m1.md')
 
   expect([...written.keys()]).toContain('/project/.claude/ouroboros/state.json')
   expect([...written.keys()].every(path => path.startsWith('/project/.claude/ouroboros/'))).toBe(true)
+})
+
+test('a session whose cwd moved into a subdirectory still reads the config at the checkout root', async ($, on) => {
+  subdirectoryWorld(on, { '/project/.claude/ouroboros.json': CONFIG, '/project/docs/drafts/plans/m1.md': PLAN })
+
+  const answered = await run($, 'kickoff M1 specs/m1.md plans/m1.md')
+
+  expect(answered.text).toStartWith('spec: specs/m1.md')
 })
