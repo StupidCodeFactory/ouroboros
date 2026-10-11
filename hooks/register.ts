@@ -27,7 +27,7 @@ import { DEFAULT_EAGER_SKILLS_MAX_CHARS, eagerFileName, eagerSkillNames, laneEnv
 import type { OuroborosConfig, SkillRef } from './eager_skills/config'
 import { checkBudget, eagerBlock } from './eager_skills/inline'
 import type { InlinedSkill } from './eager_skills/inline'
-import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './eager_skills/resolve'
+import { fixedSkillRoots, frontmatterName, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill, syncedPluginName, syncedPluginsDir } from './eager_skills/resolve'
 import type { SkillIndex, SkillListing } from './eager_skills/resolve'
 import { candidateRow, isPlanningSkill, withPlanningLessons } from './planning_lessons'
 import { IMPLEMENTER_AGENTS, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow, isPullRequestMerge, isRetroTrigger, retroPrompt } from './retro'
@@ -798,10 +798,25 @@ async function subdirectories($: EngineInterface, path: string) {
 
 const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-async function manifestSkills($: EngineInterface, versionDir: string): Promise<string | string[] | undefined> {
-  const manifestPath = `${versionDir}/.claude-plugin/plugin.json`
-  if (!(await $.fs.exists(manifestPath))) return undefined
-  return JSON.parse(await $.fs.read(manifestPath)).skills
+async function pluginManifest($: EngineInterface, pluginDir: string): Promise<{ name?: string; skills?: string | string[] }> {
+  const manifestPath = `${pluginDir}/.claude-plugin/plugin.json`
+  if (!(await $.fs.exists(manifestPath))) return {}
+  return JSON.parse(await $.fs.read(manifestPath))
+}
+
+async function manifestSkills($: EngineInterface, versionDir: string) {
+  return (await pluginManifest($, versionDir)).skills
+}
+
+async function syncedPluginSkillRoots($: EngineInterface, home: string) {
+  const roots: Array<[string, string[] | undefined, string]> = []
+  for (const bucket of await subdirectories($, syncedPluginsDir(home))) {
+    for (const plugin of await subdirectories($, bucket)) {
+      const manifest = await pluginManifest($, plugin)
+      for (const [root, names] of pluginSkillRoots(plugin, manifest.skills)) roots.push([root, names, syncedPluginName(baseName(plugin), manifest.name)])
+    }
+  }
+  return roots
 }
 
 async function installedPluginSkillRoots($: EngineInterface, home: string) {
@@ -816,8 +831,18 @@ async function installedPluginSkillRoots($: EngineInterface, home: string) {
   return roots
 }
 
+async function skillFrontmatterName($: EngineInterface, skillFile: string) {
+  return (await $.fs.exists(skillFile)) ? frontmatterName(await $.fs.read(skillFile)) : undefined
+}
+
+async function frontmatterNamesOf($: EngineInterface, root: string, names: string[]) {
+  const found = await Promise.all(names.map(async name => [name, await skillFrontmatterName($, `${root}/${name}/SKILL.md`)] as const))
+  return Object.fromEntries(found.filter((entry): entry is readonly [string, string] => entry[1] !== undefined && entry[1] !== entry[0]))
+}
+
 async function skillNamesUnder($: EngineInterface, root: string, names: string[] | undefined, pluginPrefix: string | undefined): Promise<SkillListing[number]> {
-  return [root, names ?? (await subdirectories($, root)).map(baseName), pluginPrefix]
+  const listed = names ?? (await subdirectories($, root)).map(baseName)
+  return [root, listed, pluginPrefix, await frontmatterNamesOf($, root, listed)]
 }
 
 async function buildSkillIndex($: EngineInterface) {
@@ -828,7 +853,7 @@ async function buildSkillIndex($: EngineInterface) {
     [pluginRoot as string, undefined, $.plugin.name],
     [userRoot as string, undefined, undefined],
   ]
-  const listing = await Promise.all([...roots, ...(await installedPluginSkillRoots($, home))].map(([root, names, prefix]) => skillNamesUnder($, root, names, prefix)))
+  const listing = await Promise.all([...roots, ...(await installedPluginSkillRoots($, home)), ...(await syncedPluginSkillRoots($, home))].map(([root, names, prefix]) => skillNamesUnder($, root, names, prefix)))
   const index = indexSkills(listing)
   await $.state.set(SKILL_INDEX, index)
   return index

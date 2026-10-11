@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { fixedSkillRoots, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill } from './resolve'
+import { fixedSkillRoots, frontmatterName, indexSkills, pluginCacheDir, pluginSkillRoots, resolveSkill, syncedPluginName, syncedPluginsDir } from './resolve'
+import type { SkillListing } from './resolve'
 
 test('fixed skill roots run project, plugin, then user', () => {
   expect(fixedSkillRoots('/project', '/plugin', '/home')).toEqual([
@@ -48,4 +49,29 @@ test('a plugin manifest places its skills, nested or not', () => {
 
 test('a manifest naming one skills directory as a string lists that directory', () => {
   expect(pluginSkillRoots('/cache/market/tooling/1.0.0', './design/')).toEqual([['/cache/market/tooling/1.0.0/design', undefined]])
+})
+
+test('a skill is indexed under its frontmatter name too, bare and with its plugin prefix', () => {
+  const listing: SkillListing = [['/synced/b/kit~g2/skills', ['brandkit', 'kit'], 'kit', { kit: 'design-taste' }]]
+  expect(indexSkills(listing)).toEqual({
+    brandkit: '/synced/b/kit~g2/skills/brandkit/SKILL.md',
+    'kit:brandkit': '/synced/b/kit~g2/skills/brandkit/SKILL.md',
+    kit: '/synced/b/kit~g2/skills/kit/SKILL.md',
+    'kit:kit': '/synced/b/kit~g2/skills/kit/SKILL.md',
+    'design-taste': '/synced/b/kit~g2/skills/kit/SKILL.md',
+    'kit:design-taste': '/synced/b/kit~g2/skills/kit/SKILL.md',
+  })
+})
+
+test('the frontmatter name of a skill file, when it has one', () => {
+  expect(frontmatterName('---\nname: design-taste\ndescription: x\n---\nBody.')).toBe('design-taste')
+  expect(frontmatterName('---\ndescription: x\n---\nname: not this')).toBe(undefined)
+  expect(frontmatterName('No frontmatter.')).toBe(undefined)
+})
+
+test('a synced plugin is named by its manifest, or by its folder without the sync suffix', () => {
+  expect(syncedPluginsDir('/home')).toBe('/home/.claude/plugins/synced')
+  expect(syncedPluginName('kit~g2', 'taste-kit')).toBe('taste-kit')
+  expect(syncedPluginName('kit~g2', undefined)).toBe('kit')
+  expect(syncedPluginName('kit', undefined)).toBe('kit')
 })

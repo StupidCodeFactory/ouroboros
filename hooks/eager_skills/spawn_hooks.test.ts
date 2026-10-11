@@ -136,3 +136,33 @@ test('an agent the plugin does not define is left alone', async ($, on) => {
   expect(prompts).toEqual(['Explore.'])
   expect(written.size).toBe(0)
 })
+
+test('a skill of a plugin synced from the account resolves by its folder and by its frontmatter name', async ($, on) => {
+  const config = JSON.stringify({ agents: { implementer: { eager_skills: ['taste-kit:brandkit', 'taste-kit:design-taste-frontend'] } } })
+  const files = {
+    ...FILES,
+    '.claude/ouroboros.json': config,
+    'taste-kit~g2/.claude-plugin/plugin.json': JSON.stringify({ name: 'taste-kit' }),
+    'skills/brandkit/SKILL.md': '---\nname: brandkit\n---\nBrand boards.',
+    'skills/taste-kit/SKILL.md': '---\nname: design-taste-frontend\n---\nGood taste.',
+  }
+  const dirs = {
+    ...DIRS,
+    '/home/.claude/plugins/synced': ['bucket-1'],
+    '/home/.claude/plugins/synced/bucket-1': ['taste-kit~g2'],
+    '/home/.claude/plugins/synced/bucket-1/taste-kit~g2/skills': ['brandkit', 'taste-kit'],
+  }
+  worldBeneath(on, files, dirs)
+  const prompts: string[] = []
+  on('agent.spawn', (_, e) => {
+    prompts.push(e.prompt)
+    return { model: 'fable', agentId: 'impl-1' }
+  })
+
+  await $.session.start({ cwd: '/project', surface: null, isInteractive: true })
+  const spawned = await $.agent.spawn(spawnInput('implementer', 'Build.'))
+
+  expect(spawned.deny).toBe(undefined)
+  expect(prompts[0]).toContain('<skill name="taste-kit:brandkit">\nBrand boards.\n</skill>')
+  expect(prompts[0]).toContain('<skill name="taste-kit:design-taste-frontend">\nGood taste.\n</skill>')
+})

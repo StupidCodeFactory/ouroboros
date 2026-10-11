@@ -1,7 +1,7 @@
 import type { SkillRef } from './config'
 
 export type SkillIndex = Record<string, string>
-export type SkillListing = Array<[root: string, names: string[], pluginPrefix?: string]>
+export type SkillListing = Array<[root: string, names: string[], pluginPrefix?: string, frontmatterNames?: Record<string, string>]>
 
 export const fixedSkillRoots = (projectRoot: string, pluginRoot: string, home: string) => [
   `${projectRoot}/.claude/skills`,
@@ -10,6 +10,18 @@ export const fixedSkillRoots = (projectRoot: string, pluginRoot: string, home: s
 ]
 
 export const pluginCacheDir = (home: string) => `${home}/.claude/plugins/cache`
+
+export const syncedPluginsDir = (home: string) => `${home}/.claude/plugins/synced`
+
+export const syncedPluginName = (folder: string, manifestName: string | undefined) => manifestName ?? folder.replace(/~.*$/, '')
+
+const FRONTMATTER = /^---\n([\s\S]*?)\n---/
+const NAME_LINE = /^name:\s*(.+?)\s*$/m
+
+export const frontmatterName = (text: string) => {
+  const frontmatter = FRONTMATTER.exec(text)?.[1]
+  return frontmatter === undefined ? undefined : NAME_LINE.exec(frontmatter)?.[1]
+}
 
 export type PluginSkillRoot = [root: string, names: string[] | undefined]
 
@@ -34,10 +46,13 @@ const qualifiedName = (ref: SkillRef) => (ref.level === undefined ? ref.name : `
 
 export const indexSkills = (listing: SkillListing): SkillIndex => {
   const index: SkillIndex = {}
-  for (const [root, names, pluginPrefix] of listing) {
+  for (const [root, names, pluginPrefix, frontmatterNames] of listing) {
     for (const name of names) {
-      index[name] ??= `${root}/${name}/SKILL.md`
-      if (pluginPrefix !== undefined) index[`${pluginPrefix}:${name}`] ??= `${root}/${name}/SKILL.md`
+      const path = `${root}/${name}/SKILL.md`
+      for (const key of [name, frontmatterNames?.[name]].filter((key): key is string => key !== undefined)) {
+        index[key] ??= path
+        if (pluginPrefix !== undefined) index[`${pluginPrefix}:${key}`] ??= path
+      }
     }
   }
   return index

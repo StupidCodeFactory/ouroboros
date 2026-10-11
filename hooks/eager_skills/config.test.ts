@@ -49,3 +49,11 @@ test('an implementer seat gets its own lane\'s test environment notes, the audit
   expect(laneEnvNotes(LANE_NOTES, { role: 'reviewer', lane: undefined })).toBe('')
   expect(laneEnvNotes({}, { role: 'implementer', lane: 'ruby' })).toBe('')
 })
+
+test('two skills of one plugin are both loaded', () => {
+  const twoOfOnePlugin = { agents: { architect: { eager_skills: ['kit:brandkit', 'kit:design-taste'] } } }
+  expect(eagerSkillNames(twoOfOnePlugin, 'architect', undefined)).toEqual([
+    { name: 'kit', level: 'brandkit' },
+    { name: 'kit', level: 'design-taste' },
+  ])
+})
