@@ -1,4 +1,4 @@
-import { bareName } from './conductor/events'
+import { withoutPluginPrefix } from './names'
 
 const PHASE_CHECKPOINT = /git commit[^\n]*phase\((P\d+)\):/
 const PR_MERGE = /\bgh pr merge\b/
@@ -36,4 +36,4 @@ export const isRetroTrigger = (command: string, hasSucceeded: boolean) => {
 }
 
 export const isPhaseWorkflow = (input: { name?: string; scriptPath?: string }) =>
-  ['phase', 'kickoff-phase'].includes(bareName(input.name ?? '')) || (input.scriptPath ?? '').endsWith('workflows/phase.js')
+  ['phase', 'kickoff-phase'].includes(withoutPluginPrefix(input.name ?? '')) || (input.scriptPath ?? '').endsWith('workflows/phase.js')

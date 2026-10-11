@@ -1,7 +1,7 @@
-const bareName = (name: string) => name.slice(name.lastIndexOf(':') + 1)
+import { afterLastColon } from './names'
 
 export const isPlanningSkill = (planningSkills: string[] | undefined, skill: string) =>
-  (planningSkills ?? []).some(planning => bareName(planning) === bareName(skill))
+  (planningSkills ?? []).some(planning => afterLastColon(planning) === afterLastColon(skill))
 
 export const withPlanningLessons = (skillText: string, lessonsText: string) =>
   `${skillText}\n\n## Planning lessons (from past sessions)\n\n${lessonsText}`

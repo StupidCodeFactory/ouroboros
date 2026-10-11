@@ -1,4 +1,5 @@
 import type { Finding } from './findings'
+import { afterLastColon } from './names'
 
 export type IncidentPlaces = {
   pluginName: string
@@ -12,8 +13,6 @@ export type IncidentPlaces = {
 const PLUGIN_PREFIX = /^([\w-]+):/
 
 const prefixOf = (name: string) => PLUGIN_PREFIX.exec(name)?.[1]
-
-const bareName = (name: string) => name.slice(name.lastIndexOf(':') + 1)
 
 const AGENT_PLAYING = { planner: 'architect', curator: 'skill-curator' } as Record<string, string>
 
@@ -44,7 +43,7 @@ const ownPluginPath = (places: IncidentPlaces, kind: 'skills' | 'agents', name: 
 
 const skillIncidentPath = (skill: string, places: IncidentPlaces) => {
   const plugin = prefixOf(skill)
-  const name = bareName(skill)
+  const name = afterLastColon(skill)
   if (plugin !== undefined && plugin !== places.pluginName) return `${pluginIncidentsDir(places, plugin)}/skills/${name}.md`
   if (plugin === places.pluginName || places.pluginSkills.includes(name)) return ownPluginPath(places, 'skills', name)
   return `${places.projectRoot}/.claude/skills/${name}/incidents.md`
