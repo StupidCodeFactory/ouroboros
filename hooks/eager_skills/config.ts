@@ -36,16 +36,18 @@ const toSkillRef = (entry: string): SkillRef => {
   return { name: entry.slice(0, separator), level: entry.slice(separator + 1) }
 }
 
-const dedupeByName = (refs: SkillRef[]) => {
+const entryOf = (ref: SkillRef) => (ref.level === undefined ? ref.name : `${ref.name}:${ref.level}`)
+
+const dedupeEntries = (refs: SkillRef[]) => {
   const seen = new Set<string>()
-  return refs.filter(ref => !seen.has(ref.name) && seen.add(ref.name))
+  return refs.filter(ref => !seen.has(entryOf(ref)) && seen.add(entryOf(ref)))
 }
 
 export const eagerSkillNames = (config: OuroborosConfig, agent: string, lane: string | undefined): SkillRef[] => {
   const agentConfig = config.agents?.[agent]
   const laneConfig = lane === undefined ? undefined : agentConfig?.lanes?.[lane]
   const agentSkills = agentConfig?.eager_skills ?? PROCESS_SKILLS[agent] ?? []
-  return dedupeByName([...agentSkills, ...(laneConfig?.eager_skills ?? [])].map(toSkillRef))
+  return dedupeEntries([...agentSkills, ...(laneConfig?.eager_skills ?? [])].map(toSkillRef))
 }
 
 export type Seat = { role: string; lane: string | undefined }
