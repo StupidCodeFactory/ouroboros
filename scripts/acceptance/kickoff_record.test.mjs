@@ -60,6 +60,21 @@ describe('the rerun check', () => {
     assert.match(rerunGaps(rerun, [open(1), dropped(2), open(3), completed(4, AFTER_START)], droppedComments).join('\n'), /#4/)
   })
 
+  test('names a closed sub-issue the record omits that was touched after kickoff started', () => {
+    assert.match(rerunGaps(rerun, [...issues, completed(5, AFTER_START)], droppedComments).join('\n'), /#5/)
+  })
+
+  test('compares started_at as a date, not a string', () => {
+    const offsetRecord = record({ ...rerun, started_at: '2026-10-11T12:00:00+02:00' })
+    assert.match(rerunGaps(offsetRecord, [open(1), dropped(2), open(3), completed(4, AFTER_START)], droppedComments).join('\n'), /#4/)
+    assert.deepEqual(rerunGaps(offsetRecord, [open(1), dropped(2), open(3), completed(4, '2026-10-11T09:59:00.000Z')], droppedComments), [])
+  })
+
+  test('names a missing or unparsable started_at', () => {
+    assert.match(rerunGaps(record({ ...rerun, started_at: undefined }), issues, droppedComments).join('\n'), /started_at/)
+    assert.match(rerunGaps(record({ ...rerun, started_at: 'yesterday' }), issues, droppedComments).join('\n'), /started_at/)
+  })
+
   test('names two open sub-issues sharing one title', () => {
     assert.match(rerunGaps(rerun, [open(1, 'same'), dropped(2), open(3, 'same'), completed(4)], droppedComments).join('\n'), /same/)
   })

@@ -1,11 +1,10 @@
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { KICKOFF_DROPPED_COMMENT, githubConfigOf } from '../../hooks/github/gh_commands.ts'
-import { requireEnv, subIssues } from './scratch_milestone.mjs'
+import { commentsOf, scratchEnv, scratchSubIssues, statusOf } from './scratch_milestone.mjs'
 
 const RECORD_KINDS = ['created', 'updated', 'dropped', 'left_closed']
-const SCRATCH_ENV = ['OUROBOROS_SCRATCH_REPO', 'OUROBOROS_SCRATCH_ISSUE']
 
 const byNumber = issues => new Map(issues.map(issue => [issue.number, issue]))
 
@@ -31,10 +30,12 @@ const droppedGap = (issues, commentsOf, number) => {
   return []
 }
 
-const leftClosedGap = (issues, startedAt, number) => {
-  const issue = issues.get(number)
-  if (issue === undefined) return [`#${number}: not a sub-issue of the milestone`]
-  return issue.updated_at > startedAt ? [`#${number}: left closed but updated after ${startedAt}`] : []
+const touchedAfterStart = (startedAt, issue) => Date.parse(issue.updated_at) > Date.parse(startedAt)
+
+const leftClosedGaps = (record, issues) => {
+  if (Number.isNaN(Date.parse(record.started_at))) return ['record: started_at missing or not a date']
+  const keptClosed = issues.filter(issue => issue.state === 'closed' && !record.dropped.includes(issue.number))
+  return keptClosed.filter(issue => touchedAfterStart(record.started_at, issue)).map(issue => `#${issue.number}: left closed but updated after ${record.started_at}`)
 }
 
 const duplicateTitleGaps = issues =>
@@ -50,7 +51,8 @@ export const rerunGaps = (record, issues, commentsOf) => {
     ...createsGaps(record, issues),
     ...record.updated.flatMap(number => openGap(indexed, number)),
     ...record.dropped.flatMap(number => droppedGap(indexed, commentsOf, number)),
-    ...record.left_closed.flatMap(number => leftClosedGap(indexed, record.started_at, number)),
+    ...record.left_closed.filter(number => !indexed.has(number)).map(number => `#${number}: not a sub-issue of the milestone`),
+    ...leftClosedGaps(record, issues),
     ...duplicateTitleGaps(issues),
   ]
 }
@@ -60,23 +62,6 @@ export const boardGaps = (issues, statusOf, plannedColumn) =>
     const status = statusOf(issue.number)
     return status === plannedColumn ? [] : [`#${issue.number}: in "${status ?? 'no column'}", not "${plannedColumn}"`]
   })
-
-const gh = args => execFileSync('gh', args, { encoding: 'utf8' })
-
-const commentsOf = repo => number =>
-  gh(['api', '--paginate', `repos/${repo}/issues/${number}/comments`, '--jq', '.[].body']).split('\n')
-
-const STATUS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $field: String!) {
-  repository(owner: $owner, name: $name) { issue(number: $number) { projectItems(first: 50) { nodes {
-    project { title }
-    fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
-  } } } } }`
-
-const statusOf = (repo, github) => number => {
-  const [owner, name] = repo.split('/')
-  const reply = JSON.parse(gh(['api', 'graphql', '-f', `query=${STATUS_QUERY}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`, '-f', `field=${github.status_field}`]))
-  return reply.data.repository.issue.projectItems.nodes.find(item => item.project.title === github.project)?.fieldValueByName?.name
-}
 
 const recordPath = issue => process.env.OUROBOROS_KICKOFF_RECORD || `.claude/ouroboros/results/kickoff-${issue}.json`
 
@@ -98,35 +83,28 @@ const githubConfig = () => {
   return github
 }
 
-const openSubIssuesOrExit = (repo, issue) => {
-  const issues = subIssues(repo, issue)
-  if (openIssues(issues).length > 0) return issues
-  console.error(`no open sub-issue under ${repo}#${issue}`)
-  process.exit(2)
-}
-
-const gapsOf = (check, repo, issue) => {
+const gapsOf = check => {
+  const { repo, issue } = scratchEnv()
   if (check === 'creates') {
     const record = readRecord(issue)
-    return createsGaps(record, openSubIssuesOrExit(repo, issue))
+    return createsGaps(record, scratchSubIssues())
   }
   if (check === 'rerun') {
     const record = readRecord(issue)
-    return rerunGaps(record, openSubIssuesOrExit(repo, issue), commentsOf(repo))
+    return rerunGaps(record, scratchSubIssues(), commentsOf(repo))
   }
   if (check === 'board') {
     const github = githubConfig()
-    return boardGaps(openSubIssuesOrExit(repo, issue), statusOf(repo, github), github.columns.planned)
+    return boardGaps(scratchSubIssues(), statusOf(repo, github), github.columns.planned)
   }
   console.error(`unknown check: ${check}; expected creates, rerun or board`)
   process.exit(2)
 }
 
 export const main = check => {
-  requireEnv(SCRATCH_ENV)
-  const gaps = gapsOf(check, process.env.OUROBOROS_SCRATCH_REPO, process.env.OUROBOROS_SCRATCH_ISSUE)
+  const gaps = gapsOf(check)
   gaps.forEach(gap => console.log(gap))
   process.exit(gaps.length === 0 ? 0 : 1)
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) main(process.argv[2])
+if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv[2])
