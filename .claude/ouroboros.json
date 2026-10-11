@@ -42,5 +42,14 @@
   "planning_skills": ["superpowers:brainstorming", "superpowers:writing-plans"],
   "eager_skills_max_chars": 130000,
   "adr_dir": "docs/adr",
-  "drafts_dir": "docs/drafts"
+  "drafts_dir": "docs/drafts",
+  "prd": "docs/specs/2026-10-10-sections-and-verified-gates.md",
+  "github": {
+    "repo": "StupidCodeFactory/ouroboros",
+    "project": "Ouroboros",
+    "status_field": "Status",
+    "phase_field": "Phase",
+    "columns": { "milestones": "Milestones", "planned": "Planned", "in_progress": "In Progress", "qa": "QA", "done": "Done" },
+    "labels": { "needs_owner": "needs-owner" }
+  }
 }

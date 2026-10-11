@@ -239,3 +239,48 @@ Lanes keep `owned_paths`, `test`, `lint`; a project with no lane `test` cannot s
 - Old state (`milestone`, `current`, `phases`) is ignored; `start` reads the milestone's sub-issues fresh.
 - The removed workflows stay one release as thin aliases that print the replacing command, then go.
 - README rewritten around milestone issues, sections, the contract and the gate.
+
+## Milestones
+
+Each acceptance item names the command that proves it. `scripts/acceptance/<check>.sh` runs against a scratch milestone issue in a test repository given by `OUROBOROS_SCRATCH_REPO`; the milestone that needs a check writes it first.
+
+### M1. Kickoff on GitHub
+
+Goal: `/ouroboros kickoff <issue>` plans a milestone issue into sub-issues, each carrying the seven-section contract, and keeps them in line with the plan on every rerun; the board follows.
+
+Acceptance:
+- [ ] Kickoff creates one sub-issue per task under the milestone issue: `scripts/acceptance/kickoff_creates.sh` exits 0.
+- [ ] Every sub-issue body has all seven sections, none empty: `scripts/acceptance/contract_sections.sh` exits 0.
+- [ ] A rerun with one task changed, one added and one removed updates, creates and closes as "not planned", never touches a closed sub-issue, and duplicates none: `scripts/acceptance/kickoff_rerun.sh` exits 0.
+- [ ] Every open sub-issue is in the planned column with its Phase field set: `scripts/acceptance/board_planned.sh` exits 0.
+- [ ] No project value in the plugin's code: `./scripts/guard_no_outside_skills.sh` exits 0.
+- [ ] The plugin's tests pass: `./scripts/pre-push` exits 0.
+
+### M2. Sections run from sub-issues
+
+Goal: `/ouroboros start <issue>` runs the milestone's next section from its sub-issues: contract, validation, implementation, review and the final gate, ending in a PR that closes them.
+
+Acceptance:
+- [ ] Launching a section moves its sub-issues to in progress: `scripts/acceptance/section_in_progress.sh` exits 0.
+- [ ] A passing gate ticks every covered checklist item, the PR body carries `Closes #n` for each sub-issue, and they move to QA: `scripts/acceptance/section_gate_pass.sh` exits 0.
+- [ ] An escalation labels the sub-issue `needs-owner` and comments the question on it: `scripts/acceptance/section_escalation.sh` exits 0.
+- [ ] The plugin's tests pass: `./scripts/pre-push` exits 0.
+
+### M3. Milestone exit and auto-continue
+
+Goal: after the user merges a section's PR, its sub-issues reach Done and the next section starts by itself; after the last one, the milestone issue closes once its acceptance checks pass.
+
+Acceptance:
+- [ ] A merged section's sub-issues are closed and in the done column, and the next section's goal is set: `scripts/acceptance/auto_continue.sh` exits 0.
+- [ ] Exit refuses while a sub-issue is open or an acceptance command fails, and names each blocker: `scripts/acceptance/exit_refuses.sh` exits 0.
+- [ ] Exit closes the milestone issue and moves it to done when everything holds: `scripts/acceptance/exit_closes.sh` exits 0.
+- [ ] The plugin's tests pass: `./scripts/pre-push` exits 0.
+
+### M4. Retire the plan-file flow
+
+Goal: nothing reads or writes a plan file any more; the old workflows, commands and the migration skill are gone, the agents and skills speak milestone issues and sections, and the release ships.
+
+Acceptance:
+- [ ] No workflow, hook or skill refers to a plan file, a phase tag or a removed command: `scripts/acceptance/no_plan_file.sh` exits 0.
+- [ ] The plugin validates: `claude plugin validate .claude-plugin/plugin.json` exits 0.
+- [ ] The plugin's tests pass: `./scripts/pre-push` exits 0.
