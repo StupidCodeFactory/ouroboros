@@ -38,6 +38,10 @@ import { addToBoardCommand, boardIdsOf, createSubIssueCommand, creationOrder, dr
 import type { BoardIds, GhCommand, GithubConfig } from './github/gh_commands'
 import { plannedBody } from './github/kickoff_plan'
 import type { KickoffChanges, PlannedTask, SubIssue } from './github/kickoff_plan'
+import { kickoffChanges } from './github/kickoff_plan'
+import { architectResult, kickoffAnswer, kickoffIssueNumber, kickoffRecord, milestoneColumn, prdSection } from './github/kickoff_issue'
+import { milestoneGaps, renderMilestoneBody } from './github/contract'
+import type { MilestoneBody } from './github/contract'
 
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
 const INCIDENT_LOG_HEADER = '# Incidents\n\n'
@@ -54,7 +58,7 @@ const EAGER_DIR = '.claude/ouroboros/eager'
 const BRIEFS_DIR = '.claude/ouroboros/briefs'
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
+  description: 'Conductor: /ouroboros status | pause | resume | escalations | kickoff <issue> | kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal] | adopt <task-id> <workflow> [phase] | set phase <PN> | set status <status> | collect <output-file>',
   argumentHint: '<subcommand>',
 }
 const SKILL_INCIDENT_COMMAND = {
@@ -63,7 +67,7 @@ const SKILL_INCIDENT_COMMAND = {
   argumentHint: '<skill> <text>',
 }
 
-const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit', 'kickoff-phase'])
+const LOOP_WORKFLOWS = new Set(['milestone-kickoff', 'phase', 'milestone-exit', 'kickoff-phase', 'issue-kickoff'])
 
 const agentRole = (subagentType: string) => subagentType.slice(subagentType.lastIndexOf(':') + 1)
 
@@ -472,6 +476,69 @@ async function kickoff($: EngineInterface, args: string) {
   return [`spec: ${spec}`, `plan: ${plan}`, ...reconciled.dropped, await offerPending($, reconciled.state)].join('\n')
 }
 
+async function issueColumn($: EngineInterface, github: GithubConfig, number: number) {
+  const items = JSON.parse(await gh($, { argv: ['gh', 'issue', 'view', String(number), '-R', github.repo ?? '', '--json', 'projectItems', '--jq', '.projectItems'] }))
+  return milestoneColumn(items, github.project ?? '')
+}
+
+async function milestonePrdSection($: EngineInterface, title: string) {
+  const prd = (await readConfig($)).prd ?? 'docs/prd.md'
+  const path = await projectPath($, prd)
+  if (!(await $.fs.exists(path))) return { refusal: `no PRD at ${prd}: set prd in .claude/ouroboros.json` }
+  const found = prdSection(await $.fs.read(path), title)
+  return 'section' in found ? found : { refusal: `no heading of ${prd} matches "${title}"; headings: ${found.headings.join(', ')}` }
+}
+
+async function kickoffIssueRefusal($: EngineInterface, state: LoopState, github: GithubConfig) {
+  if (state.run !== undefined) return `kickoff waits: ${state.run.workflow} (${state.run.id}) is in flight`
+  if (github.project === undefined) return 'kickoff needs github.project in .claude/ouroboros.json'
+  const ids = await boardIds($, github)
+  return 'missing' in ids ? `kickoff needs ${ids.missing}` : undefined
+}
+
+async function kickoffIssue($: EngineInterface, state: LoopState, number: number) {
+  if (!(await hasConfig($))) return MISSING_CONFIG
+  const github = await githubConfig($)
+  const refusal = await kickoffIssueRefusal($, state, github)
+  if (refusal !== undefined) return refusal
+  const milestone = await readMilestone($, github, number)
+  if ((await issueColumn($, github, number)) !== github.columns.milestones) return `#${number} is not in the "${github.columns.milestones}" column of "${github.project}"`
+  const prd = await milestonePrdSection($, milestone.title)
+  if ('refusal' in prd) return prd.refusal
+  const sub_issues = await readSubIssues($, github, number)
+  const launch: Launch = { workflow: 'issue-kickoff', args: { issue: number, title: milestone.title, prd_section: prd.section, milestone_body: milestone.body, sub_issues } }
+  return offerPending($, { ...IDLE_STATE, milestone: `#${number}`, status: 'kickoff', pending: launch })
+}
+
+async function writeMilestoneBody($: EngineInterface, github: GithubConfig, number: number, body: MilestoneBody) {
+  const { title } = await readMilestone($, github, number)
+  await gh($, editIssueCommand(github.repo ?? '', number, title, renderMilestoneBody(body)))
+}
+
+async function applyIssueKickoff($: EngineInterface, milestone: number, startedAt: number, json: unknown) {
+  const planned = architectResult(json)
+  if ('error' in planned) return `kickoff #${milestone} failed: ${planned.error}`
+  const bodyGaps = milestoneGaps(renderMilestoneBody(planned.milestone))
+  if (bodyGaps.length > 0) return `kickoff #${milestone} rejected, nothing applied: the milestone body misses ${bodyGaps.join(', ')}`
+  const github = await githubConfig($)
+  const ids = await boardIds($, github)
+  if ('missing' in ids) return `kickoff #${milestone} failed: missing ${ids.missing}`
+  const changes = kickoffChanges(await readSubIssues($, github, milestone), planned.tasks)
+  if ('rejected' in changes) return `kickoff #${milestone} rejected, nothing applied: ${changes.rejected}`
+  const applied = await applyKickoffChanges($, github, ids, milestone, planned.tasks, changes)
+  await writeMilestoneBody($, github, milestone, planned.milestone)
+  await $.fs.write(await projectPath($, `${RESULTS_DIR}/kickoff-${milestone}.json`), JSON.stringify(kickoffRecord(applied, startedAt), null, 2))
+  return kickoffAnswer(milestone, applied)
+}
+
+async function conductIssueKickoff($: EngineInterface, state: LoopState, run: Run, json: unknown) {
+  const milestone = Number(state.milestone.replace('#', ''))
+  const note = await applyIssueKickoff($, milestone, run.started_at ?? (await $.clock.now()), json).catch(loudly)
+  const idle: LoopState = { ...state, run: undefined, pending: undefined, status: 'idle' }
+  await writeLoopState($, idle)
+  return { state: idle, note }
+}
+
 async function repaired($: EngineInterface, before: LoopState, repair: Repair) {
   if ('error' in repair) return repair.error
   await writeLoopState($, repair.state)
@@ -516,7 +583,7 @@ async function runConductorCommand($: EngineInterface, args: string) {
   if (head === 'status') return statusReport(state)
   if (head === 'escalations') return escalationsText(state)
   if (head === 'resume') return resumeLoop($, state)
-  if (head === 'kickoff') return kickoff($, rest)
+  if (head === 'kickoff') return kickoffIssueNumber(rest) === undefined ? kickoff($, rest) : kickoffIssue($, state, kickoffIssueNumber(rest) as number)
   if (head === 'adopt') return adopt($, state, rest)
   if (head === 'set') return setField($, state, rest)
   if (head === 'collect') return collect($, state, rest)
@@ -597,6 +664,7 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const outputText = await workflowOutputText($, text)
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
+  if (bareName(run.workflow) === 'issue-kickoff') return conductIssueKickoff($, state, run, json)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
   if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json, phaseAfter(state, resultPhase(json, state))))
   await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
