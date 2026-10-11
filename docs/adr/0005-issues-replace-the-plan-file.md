@@ -1,5 +1,5 @@
 # 0005 Issues replace the plan file
-Status: Proposed
+Status: Accepted
 Date: 2026-10-11 / Milestone: github-native milestones / Deciders: user, architect
 
 ## Context
@@ -15,3 +15,15 @@ The plan file goes away. A milestone is one issue; each task is a sub-issue carr
 
 ## Consequences
 Every run needs `gh` with access to the repo. Finding the next sub-issue and reading checkboxes go through the GitHub API instead of a file.
+
+## Implementation
+Kickoff reads the milestone's sub-issues and applies the architect's task list directly (`hooks/github/kickoff_plan.ts` computes created, updated and dropped; `hooks/github/gh_commands.ts` holds the `gh` calls; `hooks/register.ts` applies and records it). A sub-issue is matched by its number. A closed sub-issue is never touched. `kickoffChanges` rejects the whole task list, and kickoff applies nothing, when a task revises a closed sub-issue or one outside the milestone, when two tasks revise the same sub-issue, when a task misses part of its contract, when a task depends on itself, on a task the list does not hold, on an issue outside the milestone or on a sub-issue kickoff drops, when tasks depend on each other in a cycle, or when the list holds more than 100 tasks. `workflows/issue-kickoff.js` replaces `milestone-kickoff` for issue-backed milestones. The old plan-file workflows still exist and are retired in M4.
+
+## Verification
+- `scripts/acceptance/kickoff_rerun.sh`: a rerun updates, creates and drops, never touches a closed sub-issue, makes no duplicate.
+- `scripts/acceptance/board_planned.sh`: every open sub-issue is in the planned column.
+- `hooks/github/kickoff_plan.test.ts`, `hooks/github/kickoff_hooks.test.ts`: the diff rules and the hook path.
+- `./scripts/pre-push` exit 0 (2026-10-11).
+
+## Outcome
+Accepted at M1 (PRs #11, #12, #15). Kickoff plans through issues with no plan file. Deviation: the plan-file flow stays in place beside it until M4, so two flows exist for now. Deferred: the run and exit stages (M2, M3), and removal of the plan-file code (M4).
