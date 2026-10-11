@@ -22,8 +22,8 @@ Milestone M1 builds the planning half: kickoff writes each task as one sub-issue
 ## Verification
 - `scripts/acceptance/kickoff_creates.sh`: one sub-issue per task under the milestone.
 - `scripts/acceptance/contract_sections.mjs`: seven sections, none empty, Depends on present.
-- `node --experimental-strip-types --no-warnings --test 'scripts/acceptance/*.test.mjs'`: 27 pass, 0 fail (2026-10-11).
+- `node --experimental-strip-types --no-warnings --test 'scripts/acceptance/*.test.mjs'`: 26 pass, 0 fail (2026-10-11).
 - Task-level runs and PRs are not yet verified; M2 holds that.
 
 ## Outcome
-Accepted at M1 (milestone issue #2; sub-issues #6 to #10; PRs #11, #12, #14, #15). Shipped: the one-sub-issue-per-task shape and the dependency field. Deviation: none. Deferred to M2: the run, the branch and the PR per sub-issue.
+Accepted at M1 (milestone issue #2; sub-issues #6 to #10; PRs #11, #12, #14, #15, #29). Shipped: the one-sub-issue-per-task shape and the dependency field. Deviation: none. Deferred to M2: the run, the branch and the PR per sub-issue.
