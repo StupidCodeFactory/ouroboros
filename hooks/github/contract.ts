@@ -1,23 +1,22 @@
-export type ChecklistItem = { text: string; done: boolean }
+export type CommandItem = { text: string; command: string; done: boolean }
 export type TaskContract = {
   goal: string
   plan: string
-  checklist: ChecklistItem[]
-  completion: string
+  checklist: CommandItem[]
+  completion: string[]
   stop: string
   must_not: string
-  phase: string
   depends_on: number[]
 }
-export type AcceptanceItem = ChecklistItem & { command: string }
-export type MilestoneBody = { goal: string; brief: string; acceptance: AcceptanceItem[] }
+export type MilestoneBody = { goal: string; brief: string; acceptance: CommandItem[] }
 
-const TASK_SECTIONS = ['Goal', 'Plan', 'Checklist', 'Completion condition', 'Stop conditions', 'Must not', 'Phase'] as const
+const TASK_SECTIONS = ['Goal', 'Plan', 'Checklist', 'Completion condition', 'Stop conditions', 'Must not', 'Depends on'] as const
 const MILESTONE_SECTIONS = ['Goal', 'Brief', 'Acceptance'] as const
 const SECTION_HEADING = /^## (.+)$/m
-const CHECKLIST_ITEM = /^- \[( |x)\] (.+)$/
-const ACCEPTANCE_TEXT = /^(.+): `([^`]+)`$/
-const PHASE_SECTION = /^(P\d+)\nDepends on: (none|#\d+(?:, #\d+)*)$/
+const COMMAND_ITEM = /^- \[( |x)\] (.+): `([^`]+)`$/
+const COMPLETION_ITEM = /^- `([^`]+)`$/
+const FILES_LINE = /^Files: .*`[^`]+`/m
+const DEPENDS_ON = /^(none|#\d+(?:, #\d+)*)$/
 
 const sectionsOf = (body: string): Map<string, string> => {
   const parts = body.split(SECTION_HEADING)
@@ -28,96 +27,86 @@ const sectionsOf = (body: string): Map<string, string> => {
 
 const renderSections = (sections: Array<[string, string]>) => sections.map(([name, text]) => `## ${name}\n${text}\n`).join('\n')
 
-const checkbox = (item: ChecklistItem) => `- [${item.done ? 'x' : ' '}] `
+const linesOf = (text: string) => text.split('\n').filter(line => line.trim() !== '')
 
-const renderChecklist = (items: ChecklistItem[]) => items.map(item => `${checkbox(item)}${item.text}`).join('\n')
+const allOrNothing = <T>(parsed: Array<T | undefined>): T[] | undefined =>
+  parsed.length === 0 || parsed.some(item => item === undefined) ? undefined : (parsed as T[])
 
-const parseChecklist = (text: string): ChecklistItem[] | undefined => {
-  const lines = text.split('\n').filter(line => line.trim() !== '')
-  const items = lines.map(line => CHECKLIST_ITEM.exec(line))
-  if (items.length === 0 || items.some(match => match === null)) return undefined
-  return items.map(match => ({ done: match?.[1] === 'x', text: match?.[2] ?? '' }))
+const renderCommandItems = (items: CommandItem[]) => items.map(item => `- [${item.done ? 'x' : ' '}] ${item.text}: \`${item.command}\``).join('\n')
+
+const commandItemOf = (line: string): CommandItem | undefined => {
+  const match = COMMAND_ITEM.exec(line)
+  return match === null ? undefined : { text: match[2] ?? '', command: match[3] ?? '', done: match[1] === 'x' }
 }
 
-const dependencyText = (dependsOn: number[]) => (dependsOn.length === 0 ? 'none' : dependsOn.map(number => `#${number}`).join(', '))
+const parseCommandItems = (text: string) => allOrNothing(linesOf(text).map(commandItemOf))
 
-const dependencyNumbers = (text: string) => (text === 'none' ? [] : text.split(', ').map(reference => Number(reference.slice(1))))
+const renderCompletion = (commands: string[]) => commands.map(command => `- \`${command}\``).join('\n')
 
-export const parsePhase = (text: string) => {
-  const match = PHASE_SECTION.exec(text.trim())
+const parseCompletion = (text: string) => allOrNothing(linesOf(text).map(line => COMPLETION_ITEM.exec(line)?.[1]))
+
+export const parseDependsOn = (text: string) => {
+  const match = DEPENDS_ON.exec(text.trim())
   if (match === null) return undefined
-  return { phase: match[1] ?? '', depends_on: dependencyNumbers(match[2] ?? '') }
+  return match[1] === 'none' ? [] : (match[1] ?? '').split(', ').map(reference => Number(reference.slice(1)))
 }
+
+const renderDependsOn = (dependsOn: number[]) => (dependsOn.length === 0 ? 'none' : dependsOn.map(number => `#${number}`).join(', '))
 
 export const renderTaskBody = (task: TaskContract) =>
   renderSections([
     ['Goal', task.goal],
     ['Plan', task.plan],
-    ['Checklist', renderChecklist(task.checklist)],
-    ['Completion condition', task.completion],
+    ['Checklist', renderCommandItems(task.checklist)],
+    ['Completion condition', renderCompletion(task.completion)],
     ['Stop conditions', task.stop],
     ['Must not', task.must_not],
-    ['Phase', `${task.phase}\nDepends on: ${dependencyText(task.depends_on)}`],
+    ['Depends on', renderDependsOn(task.depends_on)],
   ])
 
-const isTaskSectionValid = (name: string, text: string) => {
-  if (text === '') return false
-  if (name === 'Checklist') return parseChecklist(text) !== undefined
-  if (name === 'Phase') return parsePhase(text) !== undefined
-  return true
+const SECTION_CHECKS: Record<string, (text: string) => boolean> = {
+  Plan: text => FILES_LINE.test(text),
+  Checklist: text => parseCommandItems(text) !== undefined,
+  'Completion condition': text => parseCompletion(text) !== undefined,
+  'Depends on': text => parseDependsOn(text) !== undefined,
+  Acceptance: text => parseCommandItems(text) !== undefined,
 }
 
-export const contractGaps = (body: string) => {
+const isSectionValid = (name: string, text: string) => text !== '' && (SECTION_CHECKS[name]?.(text) ?? true)
+
+const gapsOf = (body: string, names: readonly string[]) => {
   const sections = sectionsOf(body)
-  return TASK_SECTIONS.filter(name => !isTaskSectionValid(name, sections.get(name) ?? ''))
+  return names.filter(name => !isSectionValid(name, sections.get(name) ?? ''))
 }
+
+export const contractGaps = (body: string) => gapsOf(body, TASK_SECTIONS)
+
+export const milestoneGaps = (body: string) => gapsOf(body, MILESTONE_SECTIONS)
 
 export const parseTaskBody = (body: string): TaskContract | undefined => {
   if (contractGaps(body).length > 0) return undefined
-  const section = (name: string) => sectionsOf(body).get(name) ?? ''
-  const phase = parsePhase(section('Phase'))
+  const sections = sectionsOf(body)
+  const section = (name: string) => sections.get(name) ?? ''
   return {
     goal: section('Goal'),
     plan: section('Plan'),
-    checklist: parseChecklist(section('Checklist')) ?? [],
-    completion: section('Completion condition'),
+    checklist: parseCommandItems(section('Checklist')) ?? [],
+    completion: parseCompletion(section('Completion condition')) ?? [],
     stop: section('Stop conditions'),
     must_not: section('Must not'),
-    phase: phase?.phase ?? '',
-    depends_on: phase?.depends_on ?? [],
+    depends_on: parseDependsOn(section('Depends on')) ?? [],
   }
-}
-
-const renderAcceptance = (items: AcceptanceItem[]) => renderChecklist(items.map(item => ({ done: item.done, text: `${item.text}: \`${item.command}\`` })))
-
-const acceptanceItemOf = (item: ChecklistItem): AcceptanceItem | undefined => {
-  const match = ACCEPTANCE_TEXT.exec(item.text)
-  if (match === null) return undefined
-  return { text: match[1] ?? '', command: match[2] ?? '', done: item.done }
-}
-
-const parseAcceptance = (text: string): AcceptanceItem[] | undefined => {
-  const items = (parseChecklist(text) ?? []).map(acceptanceItemOf)
-  if (items.length === 0 || items.some(item => item === undefined)) return undefined
-  return items.filter((item): item is AcceptanceItem => item !== undefined)
 }
 
 export const renderMilestoneBody = (milestone: MilestoneBody) =>
   renderSections([
     ['Goal', milestone.goal],
     ['Brief', milestone.brief],
-    ['Acceptance', renderAcceptance(milestone.acceptance)],
+    ['Acceptance', renderCommandItems(milestone.acceptance)],
   ])
-
-const isMilestoneSectionValid = (name: string, text: string) => text !== '' && (name !== 'Acceptance' || parseAcceptance(text) !== undefined)
-
-export const milestoneGaps = (body: string) => {
-  const sections = sectionsOf(body)
-  return MILESTONE_SECTIONS.filter(name => !isMilestoneSectionValid(name, sections.get(name) ?? ''))
-}
 
 export const parseMilestoneBody = (body: string): MilestoneBody | undefined => {
   if (milestoneGaps(body).length > 0) return undefined
   const sections = sectionsOf(body)
-  return { goal: sections.get('Goal') ?? '', brief: sections.get('Brief') ?? '', acceptance: parseAcceptance(sections.get('Acceptance') ?? '') ?? [] }
+  return { goal: sections.get('Goal') ?? '', brief: sections.get('Brief') ?? '', acceptance: parseCommandItems(sections.get('Acceptance') ?? '') ?? [] }
 }

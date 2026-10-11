@@ -9,8 +9,6 @@ export type KickoffChanges = { create: number[]; update: number[]; drop: number[
 const MAX_SUB_ISSUES = 100
 const UNRESOLVED = 0
 
-const phaseNumber = (phase: string) => Number(phase.slice(1))
-
 const positionOf = (index: number) => index + 1
 
 export const plannedBody = (task: PlannedTask, issueOfTask: (position: number) => number) =>
@@ -40,30 +38,52 @@ const gapProblem = (task: PlannedTask, position: number) => {
   return gaps.length === 0 ? undefined : `task ${position} "${task.title}" misses ${gaps.join(', ')}`
 }
 
-const taskDependencyProblem = (task: PlannedTask, position: number, target: number, tasks: PlannedTask[]) => {
+const taskDependencyProblem = (position: number, target: number, tasks: PlannedTask[]) => {
   if (target === position) return `task ${position} depends on itself`
-  const dependency = tasks[target - 1]
-  if (dependency === undefined) return `task ${position} depends on task ${target}, which the list does not hold`
-  if (phaseNumber(dependency.phase) > phaseNumber(task.phase)) return `task ${position} (${task.phase}) depends on task ${target} in a later phase (${dependency.phase})`
+  if (tasks[target - 1] === undefined) return `task ${position} depends on task ${target}, which the list does not hold`
   return undefined
 }
 
-const issueDependencyProblem = (task: PlannedTask, position: number, target: number, tasks: PlannedTask[], existing: SubIssue[]) => {
+const issueDependencyProblem = (position: number, target: number, tasks: PlannedTask[], existing: SubIssue[]) => {
   const subIssue = existing.find(candidate => candidate.number === target)
   if (subIssue === undefined) return `task ${position} depends on #${target}, which is not a sub-issue of this milestone`
-  if (subIssue.state === 'closed') return undefined
-  const revising = tasks.findIndex(candidate => candidate.issue === target)
-  if (revising === -1) return `task ${position} depends on #${target}, which kickoff drops`
-  return taskDependencyProblem(task, position, positionOf(revising), tasks)
+  if (subIssue.state === 'open' && !tasks.some(candidate => candidate.issue === target)) return `task ${position} depends on #${target}, which kickoff drops`
+  return undefined
 }
 
 const dependencyProblem = (task: PlannedTask, position: number, tasks: PlannedTask[], existing: SubIssue[]) => {
   for (const dependency of task.depends_on) {
-    const problem =
-      'issue' in dependency
-        ? issueDependencyProblem(task, position, dependency.issue, tasks, existing)
-        : taskDependencyProblem(task, position, dependency.task, tasks)
+    const problem = 'issue' in dependency ? issueDependencyProblem(position, dependency.issue, tasks, existing) : taskDependencyProblem(position, dependency.task, tasks)
     if (problem !== undefined) return problem
+  }
+  return undefined
+}
+
+const dependencyPositions = (task: PlannedTask, tasks: PlannedTask[]) =>
+  task.depends_on.flatMap(dependency => {
+    if ('task' in dependency) return [dependency.task]
+    const revising = tasks.findIndex(candidate => candidate.issue === dependency.issue)
+    return revising === -1 ? [] : [positionOf(revising)]
+  })
+
+const cycleFrom = (start: number, tasks: PlannedTask[], path: number[] = []): number[] | undefined => {
+  if (path.includes(start)) return path.slice(path.indexOf(start))
+  for (const next of dependencyPositions(tasks[start - 1] as PlannedTask, tasks)) {
+    const cycle = cycleFrom(next, tasks, [...path, start])
+    if (cycle !== undefined) return cycle
+  }
+  return undefined
+}
+
+const positionsText = (positions: number[]) => {
+  const sorted = [...positions].sort((left, right) => left - right)
+  return `${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`
+}
+
+const cycleProblem = (tasks: PlannedTask[]) => {
+  for (const index of tasks.keys()) {
+    const cycle = cycleFrom(positionOf(index), tasks)
+    if (cycle !== undefined) return `tasks ${positionsText(cycle)} depend on each other in a cycle`
   }
   return undefined
 }
@@ -78,7 +98,7 @@ const listProblem = (tasks: PlannedTask[], existing: SubIssue[]) => {
     const found = taskProblem(task, positionOf(index), tasks, existing)
     if (found !== undefined) return found
   }
-  return undefined
+  return cycleProblem(tasks)
 }
 
 const dependsOnNewTask = (task: PlannedTask) => task.depends_on.some(dependency => 'task' in dependency)
