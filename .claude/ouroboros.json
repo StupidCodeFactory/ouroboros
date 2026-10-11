@@ -12,7 +12,7 @@
       "eager_skills": [
         "ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow", "ouroboros:findings-contract", "ouroboros:adr-format",
         "caveman:caveman:ultra", "ponytail:ponytail:ultra",
-        "impeccable:impeccable", "taste-skill:brandkit"
+        "impeccable:impeccable"
       ]
     },
     "implementer": {
@@ -20,7 +20,7 @@
         "ouroboros:checkbox-progress", "ouroboros:code-style", "ouroboros:phase-pr-workflow",
         "caveman:caveman:ultra", "ponytail:ponytail:ultra"
       ],
-      "lanes": { "docs": { "eager_skills": ["impeccable:impeccable", "taste-skill:design-taste-frontend"] } }
+      "lanes": { "docs": { "eager_skills": ["impeccable:impeccable"] } }
     },
     "reviewer": {
       "eager_skills": [
