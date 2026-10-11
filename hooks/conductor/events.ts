@@ -1,11 +1,9 @@
 import type { Run } from './state'
 import { briefSlicesOf } from './briefs'
 import type { LoopEvent } from './transitions'
+import { withoutPluginPrefix } from '../names'
 
-const PLUGIN_PREFIX = /^[\w-]+:/
 const OUTPUT_FILE = /<output-file>([^<]+)<\/output-file>/
-
-export const bareName = (name: string) => name.replace(PLUGIN_PREFIX, '')
 
 export const outputFileOf = (notificationText: string) => OUTPUT_FILE.exec(notificationText)?.[1]
 
@@ -67,7 +65,7 @@ const exitEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
 }
 
 export const kickoffDecisionsOf = (run: Run, json: Record<string, unknown> | undefined): object[] => {
-  if (bareName(run.workflow) !== 'milestone-kickoff' || !Array.isArray(json?.decisions)) return []
+  if (withoutPluginPrefix(run.workflow) !== 'milestone-kickoff' || !Array.isArray(json?.decisions)) return []
   return json.decisions
 }
 
@@ -79,7 +77,7 @@ const kickoffEvent = (json: Record<string, unknown> | undefined): LoopEvent => {
 }
 
 export const loopEventOf = (text: string, resultPath: string, run: Run, currentPhase: string | null, json = embeddedJson(text)): LoopEvent => {
-  const workflow = bareName(run.workflow)
+  const workflow = withoutPluginPrefix(run.workflow)
   if (workflow === 'milestone-kickoff') return kickoffEvent(json)
   if (workflow === 'retro') return { type: 'retro-done' }
   if (workflow === 'milestone-exit') return exitEvent(json)

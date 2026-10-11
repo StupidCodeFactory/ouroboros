@@ -6,7 +6,8 @@ import type { ActiveDrafts } from './drafts'
 import { briefFiles } from './conductor/briefs'
 import type { BriefSlices } from './conductor/briefs'
 import { digestedResult, isOversized } from './conductor/digest'
-import { bareName, blockedTaskIds, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
+import { blockedTaskIds, embeddedJson, isLoopNotification, kickoffDecisionsOf, loopEventOf, outputFileOf, verifiedCheckpoint, workflowResultOf } from './conductor/events'
+import { withoutPluginPrefix } from './names'
 import { COMPACT_INSTRUCTIONS, escalationsText, loopHeader, statusReport, workflowCall } from './conductor/header'
 import { IDLE_STATE, kickoffState, parseState, serializeState } from './conductor/state'
 import { discoverDrafts, kickoffArgs, type Discovery, type DraftFile, type KickoffArgs } from './discover'
@@ -75,7 +76,7 @@ const isLoopAgent = ($: EngineInterface, subagentType: string | undefined) => (s
 
 const isPluginChange = (command: string) => /\bclaude\s+plugin\s+(update|install|uninstall)\b/.test(command)
 
-const isLoopWorkflow = (name: string | undefined) => LOOP_WORKFLOWS.has(bareName(name ?? ''))
+const isLoopWorkflow = (name: string | undefined) => LOOP_WORKFLOWS.has(withoutPluginPrefix(name ?? ''))
 
 const withEagerDir = (args: unknown, eagerDir: string) => ({ ...(args as Record<string, unknown> | undefined), eager_dir: eagerDir })
 
@@ -303,7 +304,7 @@ const resumeHandle = (launched: Launched) => ({
 
 async function recordLaunchedWorkflow($: EngineInterface, name: string | undefined, launched: Launched) {
   const state = await readLoopState($)
-  if (state.pending === undefined || state.pending.workflow !== bareName(name ?? '')) return
+  if (state.pending === undefined || state.pending.workflow !== withoutPluginPrefix(name ?? '')) return
   const run = { id: launched.taskId ?? state.pending.workflow, workflow: state.pending.workflow, started_at: await $.clock.now(), ...resumeHandle(launched) }
   await writeLoopState($, { ...state, pending: undefined, run })
 }
@@ -664,10 +665,10 @@ async function conductLoopResult($: EngineInterface, state: LoopState, run: Run,
   const outputText = await workflowOutputText($, text)
   await $.fs.write(await projectPath($, resultPath), outputText ?? text)
   const json = (outputText === undefined ? undefined : workflowResultOf(outputText)) ?? embeddedJson(text)
-  if (bareName(run.workflow) === 'issue-kickoff') return conductIssueKickoff($, state, run, json)
+  if (withoutPluginPrefix(run.workflow) === 'issue-kickoff') return conductIssueKickoff($, state, run, json)
   await openKickoffAdrs($, kickoffDecisionsOf(run, json))
-  if (bareName(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json, phaseAfter(state, resultPhase(json, state))))
-  await fileIncidents($, resultIncidents(json), resultPhase(json, state) || bareName(run.workflow))
+  if (withoutPluginPrefix(run.workflow) === 'phase') await appendToPlan($, phaseFollowUps(json, phaseAfter(state, resultPhase(json, state))))
+  await fileIncidents($, resultIncidents(json), resultPhase(json, state) || withoutPluginPrefix(run.workflow))
   const event = await withVerifiedCheckpoint($, await withFiledBrief($, briefKey(state), loopEventOf(text, resultPath, run, state.current, json)), json)
   return settle($, nextAction({ ...state, run: undefined }, event, await activePlanText($), laneOwnership(await readConfig($))))
 }

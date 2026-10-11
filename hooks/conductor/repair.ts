@@ -1,4 +1,4 @@
-import { bareName } from './events'
+import { withoutPluginPrefix } from '../names'
 import type { LoopState, LoopStatus } from './state'
 
 export type Repair = { state: LoopState } | { error: string }
@@ -10,7 +10,7 @@ const SET_USAGE = 'usage: /ouroboros set phase <PN> | set status <status>'
 
 const unknownPhase = (state: LoopState, phase: string) => `unknown phase ${phase}: one of ${state.phases.join(', ')}`
 
-const isPendingFor = (state: LoopState, workflow: string) => state.pending !== undefined && bareName(state.pending.workflow) === workflow
+const isPendingFor = (state: LoopState, workflow: string) => state.pending !== undefined && withoutPluginPrefix(state.pending.workflow) === workflow
 
 const adoptionError = (state: LoopState, taskId: string, workflow: string, phase: string | undefined) => {
   if (taskId === '') return ADOPT_USAGE
@@ -22,7 +22,7 @@ const adoptionError = (state: LoopState, taskId: string, workflow: string, phase
 }
 
 export const adoptRun = (state: LoopState, taskId: string, workflowName: string, phase?: string): Repair => {
-  const workflow = bareName(workflowName)
+  const workflow = withoutPluginPrefix(workflowName)
   const error = adoptionError(state, taskId, workflow, phase)
   if (error !== undefined) return { error }
   const adopted: LoopState = { ...state, status: ADOPTED_STATUS[workflow] ?? state.status, current: phase ?? state.current, run: { id: taskId, workflow } }

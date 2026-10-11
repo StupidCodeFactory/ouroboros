@@ -1,5 +1,5 @@
 import { firstUncheckedBox, phaseTasks } from '../drafts'
-import { bareName } from './events'
+import { withoutPluginPrefix } from '../names'
 import type { LaneOwnership } from './lanes'
 import type { LoopState } from './state'
 import { exitLaunch, phaseLaunch } from './transitions'
@@ -28,7 +28,7 @@ const pendingPhase = (state: LoopState) => {
 }
 
 const staleness = (state: LoopState, evidence: Evidence) => {
-  const workflow = bareName(state.pending?.workflow ?? '')
+  const workflow = withoutPluginPrefix(state.pending?.workflow ?? '')
   if (workflow === 'milestone-kickoff') return { label: 'milestone-kickoff', reason: kickoffRunReason(state, evidence), next: state.phases[0] }
   const phase = pendingPhase(state)
   if (workflow !== 'phase' || phase === undefined) return undefined
