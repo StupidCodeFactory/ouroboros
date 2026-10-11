@@ -52,6 +52,7 @@ Goal: the loop survives what happens in a real session: a restart, a dead agent,
 Acceptance:
 - `/ouroboros doctor` checks the `gh` account and scopes, the board, its columns, the label and the PRD, and names each problem: `claude plugin test . 2>&1 | grep -F "(pass) doctor names every missing piece of the setup"`
 - After a session restart, `/ouroboros start` resumes the sub-issue in flight instead of picking another: `claude plugin test . 2>&1 | grep -F "(pass) start resumes the sub-issue in flight after a restart"`
+- With no local state, as in another checkout or after the state file is lost, `/ouroboros start` takes an open sub-issue in In Progress or QA from the board before anything in Planned, and reuses its existing branch instead of resetting it: `claude plugin test . 2>&1 | grep -F "(pass) start resumes an In Progress or QA sub-issue from the board without local state"`
 - Every stage change is visible on the sub-issue as a short comment, so the board alone explains its history: `claude plugin test . 2>&1 | grep -F "(pass) every stage change comments on the sub-issue"`
 - A `gh` failure stops the loop with the failing command and its error, and leaves GitHub as it was before the stage: `claude plugin test . 2>&1 | grep -F "(pass) a gh failure stops the loop and names the command"`
 - The plugin's tests pass: `./scripts/pre-push`
