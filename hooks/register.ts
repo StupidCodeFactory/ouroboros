@@ -34,6 +34,10 @@ import { IMPLEMENTER_AGENTS, checkpointPhaseOf, isGuardedMerge, isPhaseWorkflow,
 import { SUBAGENT_COMPACTION_INSTRUCTIONS, contextShare, memoryDigestRequest, shouldRollOver } from './rollover'
 import { duplicateLoadWarning, isAnotherInstance } from './double_load'
 import { stripFrontmatter } from './skill_text'
+import { addToBoardCommand, boardIdsOf, createSubIssueCommand, creationOrder, dropCommand, editIssueCommand, githubConfigOf, issueOfPosition, linkSubIssueCommand, setColumnCommand } from './github/gh_commands'
+import type { BoardIds, GhCommand, GithubConfig } from './github/gh_commands'
+import { plannedBody } from './github/kickoff_plan'
+import type { KickoffChanges, PlannedTask, SubIssue } from './github/kickoff_plan'
 
 const REVIEWING_AGENTS = new Set(['reviewer', 'architect', 'auditor'])
 const INCIDENT_LOG_HEADER = '# Incidents\n\n'
@@ -222,8 +226,16 @@ async function startRetro($: EngineInterface): Promise<Run> {
   return { id: spawned.agentId ?? 'retro', workflow: 'retro' }
 }
 
+async function hasLoopState($: EngineInterface) {
+  return $.fs.exists(await projectPath($, STATE_PATH))
+}
+
+async function loopStateText($: EngineInterface) {
+  return (await hasLoopState($)) ? await $.fs.read(await projectPath($, STATE_PATH)) : undefined
+}
+
 async function readLoopState($: EngineInterface) {
-  return parseState((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
+  return parseState(await loopStateText($))
 }
 
 const RUNTIME_IGNORE = '.claude/ouroboros/.gitignore'
@@ -236,7 +248,7 @@ async function ensureRuntimeIgnored($: EngineInterface) {
 
 async function writeLoopState($: EngineInterface, state: LoopState) {
   await ensureRuntimeIgnored($)
-  await $.fs.write(STATE_PATH, serializeState(state))
+  await $.fs.write(await projectPath($, STATE_PATH), serializeState(state))
 }
 
 async function activePlanText($: EngineInterface) {
@@ -416,7 +428,7 @@ async function noticedMerge($: EngineInterface, state: LoopState) {
   return `${waiting.pr_url} merged; ${await continueLoop($, released, 'note-only')}`
 }
 
-const MISSING_CONFIG = 'no .claude/ouroboros.json in this directory: create one (plugin README, Project setup) or open the session in the checkout that has it'
+const MISSING_CONFIG = 'no .claude/ouroboros.json at the checkout root: create one (plugin README, Project setup) or open the session in the checkout that has it'
 
 async function draftFiles($: EngineInterface, draftsRoot: string): Promise<DraftFile[]> {
   const { stdout } = await $.process.run(['sh', '-c', 'cd "$1" && find . -name "*.md" -type f -print0 | xargs -0 -r ls -t', 'sh', draftsRoot])
@@ -444,7 +456,7 @@ const briefKey = (state: LoopState) => (state.kickoff_phase === undefined ? stat
 async function kickoff($: EngineInterface, args: string) {
   const parsed = kickoffArgs(args)
   if (parsed.milestone === undefined) return 'usage: /ouroboros kickoff <milestone> [<spec> <plan>] [--phase <PN>] [goal]'
-  if (!(await $.fs.exists(CONFIG_PATH))) return MISSING_CONFIG
+  if (!(await hasConfig($))) return MISSING_CONFIG
   const discovery = await resolveDrafts($, parsed.milestone, parsed)
   if ('error' in discovery) return discovery.error
   const { spec, plan } = discovery.drafts
@@ -648,6 +660,72 @@ async function releaseTestResources($: EngineInterface, runId: string) {
   if (claims.some(claim => claim.run === runId)) await $.fs.write(path, JSON.stringify(claims.filter(claim => claim.run !== runId)))
 }
 
+async function gh($: EngineInterface, command: GhCommand) {
+  const { exitCode, stdout, stderr } = await $.process.run(command.argv, command.stdin === undefined ? undefined : { stdin: command.stdin })
+  if (exitCode !== 0) throw new Error(`${command.argv.slice(0, 3).join(' ')} failed: ${stderr.trim()}`)
+  return stdout.trim()
+}
+
+const ownerOf = (github: GithubConfig) => (github.repo ?? '').split('/')[0] ?? ''
+
+const issueUrl = (github: GithubConfig, number: number) => `https://github.com/${github.repo}/issues/${number}`
+
+async function githubConfig($: EngineInterface): Promise<GithubConfig> {
+  const github = githubConfigOf((await readConfig($)).github)
+  if (github.repo !== undefined) return github
+  return { ...github, repo: await gh($, { argv: ['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'] }) }
+}
+
+async function boardIds($: EngineInterface, github: GithubConfig) {
+  const owner = ownerOf(github)
+  const projects = JSON.parse(await gh($, { argv: ['gh', 'project', 'list', '--owner', owner, '--limit', '100', '--format', 'json'] }))
+  const project = projects.projects.find((candidate: { title: string }) => candidate.title === github.project)
+  const fields = project === undefined ? { fields: [] } : JSON.parse(await gh($, { argv: ['gh', 'project', 'field-list', String(project.number), '--owner', owner, '--format', 'json'] }))
+  return boardIdsOf(projects, fields, github)
+}
+
+export async function readMilestone($: EngineInterface, github: GithubConfig, number: number) {
+  return JSON.parse(await gh($, { argv: ['gh', 'issue', 'view', String(number), '-R', github.repo ?? '', '--json', 'number,title,body'] })) as { number: number; title: string; body: string }
+}
+
+export async function readSubIssues($: EngineInterface, github: GithubConfig, milestone: number): Promise<SubIssue[]> {
+  const lines = await gh($, { argv: ['gh', 'api', `repos/${github.repo}/issues/${milestone}/sub_issues`, '--paginate', '--jq', '.[] | {number, state, title, body}'] })
+  return lines.split('\n').filter(Boolean).map(line => JSON.parse(line) as SubIssue)
+}
+
+async function createSubIssue($: EngineInterface, github: GithubConfig, milestone: number, title: string, body: string) {
+  const number = Number((await gh($, createSubIssueCommand(github.repo ?? '', title, body))).split('/').pop())
+  const id = Number(await gh($, { argv: ['gh', 'api', `repos/${github.repo}/issues/${number}`, '--jq', '.id'] }))
+  await gh($, linkSubIssueCommand(github.repo ?? '', milestone, id))
+  return number
+}
+
+async function moveToColumn($: EngineInterface, github: GithubConfig, ids: BoardIds, number: number, column: 'planned') {
+  const itemId = await gh($, addToBoardCommand(ownerOf(github), ids, issueUrl(github, number)))
+  await gh($, setColumnCommand(ids, itemId, column))
+}
+
+export async function applyKickoffChanges($: EngineInterface, github: GithubConfig, ids: BoardIds, milestone: number, tasks: PlannedTask[], changes: KickoffChanges) {
+  const created = new Map<number, number>()
+  const bodyOf = (task: PlannedTask) => plannedBody(task, issueOfPosition(tasks, created))
+  for (const position of creationOrder(tasks, changes.create)) {
+    const task = tasks[position - 1] as PlannedTask
+    created.set(position, await createSubIssue($, github, milestone, task.title, bodyOf(task)))
+  }
+  for (const number of changes.update) {
+    const task = tasks.find(candidate => candidate.issue === number) as PlannedTask
+    await gh($, editIssueCommand(github.repo ?? '', number, task.title, bodyOf(task)))
+  }
+  for (const number of changes.drop) await gh($, dropCommand(github.repo ?? '', number))
+  for (const number of [...created.values(), ...changes.update, ...changes.unchanged]) await moveToColumn($, github, ids, number, 'planned')
+  return { created: [...created.values()], updated: changes.update, dropped: changes.drop, unchanged: changes.unchanged, closed: changes.closed }
+}
+
+export async function githubBoard($: EngineInterface) {
+  const github = await githubConfig($)
+  return { github, ids: await boardIds($, github) }
+}
+
 async function repositoryRoot($: EngineInterface) {
   const { stdout } = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
   return stdout.trim() || (await $.session.cwd())
@@ -761,9 +839,13 @@ async function skillIndex($: EngineInterface): Promise<SkillIndex> {
   return value ?? buildSkillIndex($)
 }
 
+async function hasConfig($: EngineInterface) {
+  return $.fs.exists(await projectPath($, CONFIG_PATH))
+}
+
 async function readConfig($: EngineInterface): Promise<OuroborosConfig> {
-  if (!(await $.fs.exists(CONFIG_PATH))) return {}
-  return JSON.parse(await $.fs.read(CONFIG_PATH))
+  if (!(await hasConfig($))) return {}
+  return JSON.parse(await $.fs.read(await projectPath($, CONFIG_PATH)))
 }
 
 export async function mainCheckoutRoot($: EngineInterface) {
@@ -776,7 +858,7 @@ export async function draftsPath($: EngineInterface, relative: string) {
 }
 
 export async function activeDrafts($: EngineInterface) {
-  return activeDraftsOf((await $.fs.exists(STATE_PATH)) ? await $.fs.read(STATE_PATH) : undefined)
+  return activeDraftsOf(await loopStateText($))
 }
 
 const agentDefinitionPath = ($: EngineInterface, agent: string) => `${$.plugin.root}/agents/${agent}.md`
@@ -818,8 +900,9 @@ async function writeEagerFiles($: EngineInterface): Promise<{ deny: string } | {
 }
 
 async function recordSpawn($: EngineInterface, agent: string, spawn: EagerSpawn) {
-  const existing = (await $.fs.exists(SPAWNS_LOG)) ? await $.fs.read(SPAWNS_LOG) : ''
-  await $.fs.write(SPAWNS_LOG, `${existing}${JSON.stringify({ agent, lane: spawn.lane, skills: spawn.skills })}\n`)
+  const path = await projectPath($, SPAWNS_LOG)
+  const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : ''
+  await $.fs.write(path, `${existing}${JSON.stringify({ agent, lane: spawn.lane, skills: spawn.skills })}\n`)
 }
 
 async function addressableAgentName($: EngineInterface, agentId: string) {
@@ -912,7 +995,7 @@ export const register: Register = on => {
   })
 
   on('prompt.context', async ($, e, next) => {
-    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    if (!(await hasLoopState($))) return next(e)
     const merged = await noticedMerge($, await readLoopState($)).catch(loudly)
     const header = loopHeader(await readLoopState($))
     return next({ ...e, blocks: [...e.blocks, { name: 'ouroboros', text: merged === undefined ? header : `${header}\n${merged}` }] })
@@ -998,7 +1081,7 @@ export const register: Register = on => {
 
   on('session.compact', async ($, e, next) => {
     if (e.agentId !== undefined) return next({ ...e, instructions: SUBAGENT_COMPACTION_INSTRUCTIONS })
-    if (!(await $.fs.exists(STATE_PATH))) return next(e)
+    if (!(await hasLoopState($))) return next(e)
     return next({ ...e, instructions: COMPACT_INSTRUCTIONS })
   })
 

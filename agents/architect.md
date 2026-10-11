@@ -9,6 +9,7 @@ Before a phase: return a design brief: where new code belongs, which existing cl
 which duplication in the touched area gets absorbed, module boundaries and public interfaces, what is
 forbidden. End with a fenced `decisions` JSON block: `[{"title","context","decision","alternatives","consequences"}]`.
 
+Writing or editing a spec: load the `spec-authoring` skill first and run its checks before you return; every decision it records goes into an ADR (`adr-format`), not the spec.
 Writing or appending plan tasks: load the `plan-authoring` skill first and run its checks before you return.
 
 Reviewing a diff: check it against your brief, duplication (extract on the second real copy), patterns that

@@ -75,7 +75,7 @@ test('a reviewer result without decisions spawns no scribe', async ($, on) => {
 test('editing a draft after milestone kickoff folds it into the active ADR and files no skill incident', async ($, on) => {
   const spawned = spawnsBeneath(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 3) })
-  gitBeneath(on, { 'git branch': 'milestone/m1\n', 'git log': 'phase(P1): first' })
+  gitBeneath(on, { 'git branch': 'milestone/m1\n', 'git log': 'phase(P1): first', 'git rev-parse': '/project\n' })
   const files = filesBeneath(on)
   on('tool.call', { tool: 'Edit' }, () => ({ result: 'edited' }))
 
@@ -89,7 +89,7 @@ test('editing a draft after milestone kickoff folds it into the active ADR and f
 
 test('editing a draft before kickoff folds it without logging drift', async ($, on) => {
   const spawned = spawnsBeneath(on)
-  gitBeneath(on, { 'git branch': 'feature/x\n', 'git log': '' })
+  gitBeneath(on, { 'git branch': 'feature/x\n', 'git log': '', 'git rev-parse': '/project\n' })
   const files = filesBeneath(on)
   on('tool.call', { tool: 'Write' }, () => ({ result: 'written' }))
 
@@ -113,6 +113,7 @@ test('a merged milestone PR starts the retro and the ADR acceptance', async ($, 
   const spawned = spawnsBeneath(on)
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  gitBeneath(on, { 'git rev-parse': '/project\n' })
   on('fs.exists', () => ({ value: false }))
 
   await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12 --merge' })

@@ -10,6 +10,12 @@ description: Load before writing or appending tasks to a plan file, and before r
 - Every step is a `- [ ]` box naming its verification: the command and the result it expects.
 - No task holds a checkpoint step. The phase workflow makes the `phase(PN):` checkpoint commit after every task of the phase is done; a box for it inside a task can never be ticked by that task and stalls the phase.
 
+## What a plan never holds
+
+- A decision the spec does not state: stop and change the spec (and its ADR) first.
+- A reason or source: the `Spec:` line points at the spec, whose ADRs hold the why.
+- A placeholder ("TBD", "add error handling", "similar to Task N"): the implementer sees only its own task.
+
 ## Before you return the plan
 
 Read every task once more and fix each that fails one of these:
