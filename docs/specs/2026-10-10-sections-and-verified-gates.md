@@ -117,6 +117,8 @@ Replaces `phase`, `kickoff-phase` and `milestone-exit`.
 6. Final gate (hook, section 8).
 7. PR: on a pass, a ready PR whose body is `Closes #<number>` and the gate evidence; on a fail, a draft PR listing the failures.
 
+Every agent of the workflow is labelled `<stage>:#<number>`, and each stage logs one line naming the sub-issue and what it is doing, so a running workflow shows which sub-issue and stage each agent serves.
+
 ### 8. The final gate (hook)
 
 Runs in the task's worktree on the final commit, never trusting an agent's report:
@@ -215,9 +217,10 @@ Acceptance:
 
 ### M2. Sub-issues run one at a time
 
-Goal: `/ouroboros start <issue>` runs the milestone's next ready sub-issue: checks red first, validation, implementation, review and the final gate, ending in a PR that closes it.
+Goal: `/ouroboros start <issue>` runs the milestone's next ready sub-issue: checks red first, validation, implementation, review and the final gate, ending in a PR that closes it. Every agent of the task workflow is labelled with its stage and sub-issue. The cheat attempt and coverage review (section 5 items 3 and 4) are not part of M2; they ship with M3.
 
 Acceptance:
+- [ ] Every agent of the task workflow is labelled `<stage>:#<number>` and each stage logs a line: `claude plugin test . 2>&1 | grep -F "(pass) every task workflow agent is labelled with its stage and sub-issue"`
 - [ ] Launching a sub-issue moves it to in progress: `scripts/acceptance/task_in_progress.sh`
 - [ ] A passing gate ticks every checklist item, the PR body carries `Closes #n`, and the sub-issue moves to QA: `scripts/acceptance/task_gate_pass.sh`
 - [ ] An escalation labels the sub-issue `needs-owner` and comments the question on it: `scripts/acceptance/task_escalation.sh`
@@ -225,9 +228,10 @@ Acceptance:
 
 ### M3. Milestone exit and auto-continue
 
-Goal: after the user merges a sub-issue's PR, it reaches Done and the next ready sub-issue starts by itself; after the last one, the milestone issue closes once its acceptance checks pass.
+Goal: after the user merges a sub-issue's PR, it reaches Done and the next ready sub-issue starts by itself; after the last one, the milestone issue closes once its acceptance checks pass. The cheat attempt and coverage review of the checks (section 5 items 3 and 4) join the validation.
 
 Acceptance:
+- [ ] A cheat diff that turns a checklist command green, or a coverage answer of no, escalates the check as weak: `scripts/acceptance/task_cheat.sh`
 - [ ] A merged sub-issue is closed and in the done column, and the next one's goal is set: `scripts/acceptance/auto_continue.sh`
 - [ ] Exit refuses while a sub-issue is open or an acceptance command fails, and names each blocker: `scripts/acceptance/exit_refuses.sh`
 - [ ] Exit closes the milestone issue and moves it to done when everything holds: `scripts/acceptance/exit_closes.sh`
