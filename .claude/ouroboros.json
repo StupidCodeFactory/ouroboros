@@ -48,7 +48,6 @@
     "repo": "StupidCodeFactory/ouroboros",
     "project": "Ouroboros",
     "status_field": "Status",
-    "phase_field": "Phase",
     "columns": { "milestones": "Milestones", "planned": "Planned", "in_progress": "In Progress", "qa": "QA", "done": "Done" },
     "labels": { "needs_owner": "needs-owner" }
   }

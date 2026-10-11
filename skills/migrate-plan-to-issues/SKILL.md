@@ -23,7 +23,6 @@ Pass `-R <owner>/<repo>` to every `gh issue` command. Never write tokens, secret
 - Replace the options in one call; this clears every item's Status:
   `gh api graphql -f query='mutation($f:ID!,$o:[ProjectV2SingleSelectFieldOptionInput!]){updateProjectV2Field(input:{fieldId:$f,singleSelectOptions:$o}){projectV2Field{... on ProjectV2SingleSelectField{options{id name}}}}}'`
 - Set each saved item's status again through the mapping: `gh project item-edit --id <item> --project-id <project> --field-id <status> --single-select-option-id <option>`.
-- Make sure a text field named Phase exists: `gh project field-create <n> --owner <owner> --name Phase --data-type TEXT`.
 - Check: the item count is unchanged, and the count per new column equals the mapped counts from the saved file.
 
 ## 3. Milestone issues
@@ -44,6 +43,6 @@ For each PRD milestone, in PRD order:
 
 ## 5. Configuration
 
-Write the keys the user chose into `.claude/ouroboros.json`: `prd`, and under `github` the `repo`, `project`, `status_field`, `phase_field` and `columns`. Show the diff; the user commits it.
+Write the keys the user chose into `.claude/ouroboros.json`: `prd`, and under `github` the `repo`, `project`, `status_field` and `columns`. Show the diff; the user commits it.
 
 Planning comes next, outside this skill: `/ouroboros kickoff <milestone issue>` revises the sub-issues and adds tasks.
