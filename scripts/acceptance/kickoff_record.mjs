@@ -4,39 +4,39 @@ import { fileURLToPath } from 'node:url'
 import { KICKOFF_DROPPED_COMMENT, githubConfigOf } from '../../hooks/github/gh_commands.ts'
 import { commentsOf, scratchEnv, scratchSubIssues, statusOf } from './scratch_milestone.mjs'
 
-const RECORD_KINDS = ['created', 'updated', 'dropped', 'left_closed']
-
-const byNumber = issues => new Map(issues.map(issue => [issue.number, issue]))
-
 const openIssues = issues => issues.filter(issue => issue.state === 'open')
 
-const openGap = (issues, number) => {
-  const issue = issues.get(number)
-  if (issue === undefined) return [`#${number}: not a sub-issue of the milestone`]
-  if (issue.state !== 'open') return [`#${number}: closed`]
+const numbers = issues => issues.map(issue => issue.number)
+
+const after = (startedAt, timestamp) => Date.parse(timestamp) > Date.parse(startedAt)
+
+const isDropped = (startedAt, issue) => issue.state === 'closed' && issue.state_reason === 'not_planned' && after(startedAt, issue.updated_at)
+
+export const outcomesOf = (startedAt, issues) => ({
+  created: numbers(issues.filter(issue => after(startedAt, issue.created_at))),
+  updated: numbers(openIssues(issues).filter(issue => !after(startedAt, issue.created_at) && after(startedAt, issue.updated_at))),
+  dropped: numbers(issues.filter(issue => isDropped(startedAt, issue))),
+  touched_closed: numbers(issues.filter(issue => issue.state === 'closed' && !isDropped(startedAt, issue) && after(startedAt, issue.updated_at))),
+})
+
+const startGaps = record => (Number.isNaN(Date.parse(record.started_at)) ? ['record: started_at missing or not a date'] : [])
+
+const plannedGap = (issues, planned) => {
+  const match = issues.find(issue => (planned.issue === undefined ? issue.title === planned.title : issue.number === planned.issue))
+  if (match === undefined) return [`planned "${planned.title}"${planned.issue === undefined ? '' : ` (#${planned.issue})`}: no sub-issue`]
+  if (match.state !== 'open') return [`planned "${planned.title}" (#${match.number}): closed`]
   return []
 }
 
 export const createsGaps = (record, issues) => {
-  if (record.created.length === 0) return ['created: empty']
-  const indexed = byNumber(issues)
-  return record.created.flatMap(number => openGap(indexed, number))
+  if (!Array.isArray(record.planned) || record.planned.length === 0) return ['record: planned missing or empty']
+  return [...startGaps(record), ...record.planned.flatMap(planned => plannedGap(issues, planned))]
 }
 
-const droppedGap = (issues, commentsOf, number) => {
-  const issue = issues.get(number)
-  if (issue?.state_reason !== 'not_planned') return [`#${number}: not closed as not planned`]
-  if (!commentsOf(number).includes(KICKOFF_DROPPED_COMMENT)) return [`#${number}: lacks the kickoff dropped comment`]
-  return []
-}
+const noneGap = (kind, found) => (found.length === 0 ? [`${kind}: none`] : [])
 
-const touchedAfterStart = (startedAt, issue) => Date.parse(issue.updated_at) > Date.parse(startedAt)
-
-const leftClosedGaps = (record, issues) => {
-  if (Number.isNaN(Date.parse(record.started_at))) return ['record: started_at missing or not a date']
-  const keptClosed = issues.filter(issue => issue.state === 'closed' && !record.dropped.includes(issue.number))
-  return keptClosed.filter(issue => touchedAfterStart(record.started_at, issue)).map(issue => `#${issue.number}: left closed but updated after ${record.started_at}`)
-}
+const droppedCommentGaps = (dropped, commentsOf) =>
+  dropped.filter(number => !commentsOf(number).includes(KICKOFF_DROPPED_COMMENT)).map(number => `#${number}: lacks the kickoff dropped comment`)
 
 const duplicateTitleGaps = issues =>
   [...Map.groupBy(openIssues(issues), issue => issue.title)]
@@ -44,15 +44,16 @@ const duplicateTitleGaps = issues =>
     .map(([title, same]) => `${same.map(issue => `#${issue.number}`).join(' ')}: share the title "${title}"`)
 
 export const rerunGaps = (record, issues, commentsOf) => {
-  const missing = RECORD_KINDS.filter(kind => !Array.isArray(record[kind]))
-  if (missing.length > 0) return missing.map(kind => `record: ${kind} missing`)
-  const indexed = byNumber(issues)
+  const created = createsGaps(record, issues)
+  if (startGaps(record).length > 0) return created
+  const outcomes = outcomesOf(record.started_at, issues)
   return [
-    ...createsGaps(record, issues),
-    ...record.updated.flatMap(number => openGap(indexed, number)),
-    ...record.dropped.flatMap(number => droppedGap(indexed, commentsOf, number)),
-    ...record.left_closed.filter(number => !indexed.has(number)).map(number => `#${number}: not a sub-issue of the milestone`),
-    ...leftClosedGaps(record, issues),
+    ...created,
+    ...noneGap('created', outcomes.created),
+    ...noneGap('updated', outcomes.updated),
+    ...noneGap('dropped', outcomes.dropped),
+    ...droppedCommentGaps(outcomes.dropped, commentsOf),
+    ...outcomes.touched_closed.map(number => `#${number}: closed, yet changed after ${record.started_at}`),
     ...duplicateTitleGaps(issues),
   ]
 }

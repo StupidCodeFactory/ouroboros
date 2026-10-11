@@ -72,15 +72,10 @@ test('an architect result without a milestone or tasks is an error', () => {
   expect(architectResult({ tasks: [] })).toEqual({ error: 'the architect returned no milestone body and task list' })
 })
 
-test('the kickoff record lists what happened by number and when the run started', () => {
-  const applied = { created: [21], updated: [12], dropped: [13], unchanged: [11], closed: [10] }
-
-  expect(kickoffRecord(applied, Date.UTC(2026, 9, 11, 12))).toEqual({
-    created: [21],
-    updated: [12],
-    dropped: [13],
-    left_closed: [10],
+test('the kickoff record holds the start and the planned tasks, by issue when they revise one', () => {
+  expect(kickoffRecord(Date.UTC(2026, 9, 11, 12), [{ ...TASK, issue: 12 }, { ...TASK, title: 'Search' }] as never)).toEqual({
     started_at: '2026-10-11T12:00:00.000Z',
+    planned: [{ issue: 12, title: 'Page list' }, { title: 'Search' }],
   })
 })
 
