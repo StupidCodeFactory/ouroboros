@@ -319,7 +319,7 @@ test('an accepted review ticks every item, pushes, opens the PR, moves the sub-i
   expect(byNumber.get(11)?.body).toContain('- [x] it lists')
   expect(byNumber.get(11)?.body).toContain('- [x] it filters')
   expect(byNumber.get(11)?.column).toBe('Done')
-  expect(writes).toEqual(['edit #11', 'pr work/11-page-list into main'])
+  expect(writes).toEqual(['edit #11', 'pr work/11-page-list into main', 'comment #11', 'comment #12'])
   expect(commands.slice(0, 2)).toEqual(['push -u origin work/11-page-list', 'worktree remove --force'])
   expect(commands).toContain('worktree add -B work/12-page-search work/11-page-list')
   expect(byNumber.get(12)?.column).toBe('In Progress')
@@ -390,4 +390,24 @@ test('with every sub-issue done, start says the milestone is finished', async ($
   world(on, BASE_FILES, [MILESTONE, issue(11, 'Page list', { column: 'Done' })], [11])
 
   expect((await run($, 'start 3')).text).toBe('milestone #3 finished: every sub-issue is Done')
+})
+
+test('every stage change comments on the sub-issue', async ($, on) => {
+  const { byNumber, writes } = world(on, BASE_FILES, [MILESTONE, issue(11, 'Page list', { column: 'Planned' })], [11])
+
+  await run($, 'start 3')
+  await answer($, { status: 'done', summary: 'listed' }, 'agent-1')
+  await answer($, ONE_FAILS, 'agent-2')
+  await answer($, { status: 'done', summary: 'fixed' }, 'agent-3')
+  await answer($, ALL_PASS, 'agent-4')
+
+  expect(byNumber.get(11)?.comments).toEqual([
+    'Ouroboros: In Progress on `work/11-page-list` (from main), implementing, round 1',
+    'Ouroboros: QA, reviewing round 1',
+    '## Review found defects\nFailed checks:\n- it filters: `bin/rspec spec/b_spec.rb`\n  1 failure\n\nDefects:\n- filters ignore case\n\nBack to In Progress.',
+    'Ouroboros: In Progress on `work/11-page-list` (from main), implementing, round 2',
+    'Ouroboros: QA, reviewing round 2',
+    'Ouroboros: Done, PR #99 opened from `work/11-page-list` into main; the merge closes this issue',
+  ])
+  expect(writes.filter(write => write.startsWith('comment') || write.startsWith('pr'))).toEqual([...Array(5).fill('comment #11'), 'pr work/11-page-list into main', 'comment #11'])
 })

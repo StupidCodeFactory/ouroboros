@@ -73,3 +73,13 @@ export const reviewOutcome = (body: string, review: Review) => {
   const accepted = failures.length === 0 && review.defects.length === 0
   return { accepted, body: renderTaskBody({ ...task, checklist }), comment: accepted ? '' : reviewComment(failures, review.defects) }
 }
+
+export type StageDetail = { branch: string; base: string; round: number; pullRequest?: string }
+
+const pullRequestNumber = (url = '') => url.split('/').pop()
+
+export const stageComment = (column: 'in_progress' | 'qa' | 'done', { branch, base, round, pullRequest }: StageDetail) => {
+  if (column === 'in_progress') return `Ouroboros: In Progress on \`${branch}\` (from ${base}), implementing, round ${round}`
+  if (column === 'qa') return `Ouroboros: QA, reviewing round ${round}`
+  return `Ouroboros: Done, PR #${pullRequestNumber(pullRequest)} opened from \`${branch}\` into ${base}; the merge closes this issue`
+}

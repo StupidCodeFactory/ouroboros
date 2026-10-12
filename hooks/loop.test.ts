@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { renderTaskBody } from './github/contract'
-import { branchName, nextSubIssue, readinessComment, reviewOutcome } from './loop'
+import { branchName, nextSubIssue, readinessComment, reviewOutcome, stageComment } from './loop'
 import type { BoardSubIssue } from './loop'
 
 const COLUMNS = { milestones: 'Milestones', planned: 'Planned', in_progress: 'In Progress', qa: 'QA', done: 'Done' }
@@ -119,4 +119,12 @@ test('defects alone reject an otherwise passing review', () => {
   expect(outcome.accepted).toBe(false)
   expect(outcome.body).toContain('- [x] an empty list says so')
   expect(outcome.comment).toBe('## Review found defects\nDefects:\n- the controller swallows errors\n\nBack to In Progress.')
+})
+
+test('a stage comment says in one line what the loop does in each column', () => {
+  const place = { branch: 'work/11-page-list', base: 'main' }
+
+  expect(stageComment('in_progress', { ...place, round: 1 })).toBe('Ouroboros: In Progress on `work/11-page-list` (from main), implementing, round 1')
+  expect(stageComment('qa', { ...place, round: 1 })).toBe('Ouroboros: QA, reviewing round 1')
+  expect(stageComment('done', { ...place, round: 2, pullRequest: 'https://github.com/acme/shop/pull/99' })).toBe('Ouroboros: Done, PR #99 opened from `work/11-page-list` into main; the merge closes this issue')
 })

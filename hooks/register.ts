@@ -21,7 +21,7 @@ import { setColumnCommand } from './github/gh_commands'
 import { architectResult, kickoffAnswer, kickoffIssueNumber, milestoneColumn, prdSection } from './github/kickoff_issue'
 import { kickoffChanges, plannedBody } from './github/kickoff_plan'
 import type { KickoffChanges, PlannedTask } from './github/kickoff_plan'
-import { MAX_REVIEW_ROUNDS, branchName, escalationComment, nextSubIssue, readinessComment, reviewOutcome } from './loop'
+import { MAX_REVIEW_ROUNDS, branchName, escalationComment, nextSubIssue, readinessComment, reviewOutcome, stageComment } from './loop'
 import type { BoardSubIssue, Review } from './loop'
 import { answerJson, implementPrompt, kickoffPrompt, reviewPrompt } from './prompts'
 import type { KickoffBrief, StageBrief } from './prompts'
@@ -136,10 +136,13 @@ async function readSubIssues($: EngineInterface, github: GithubConfig, milestone
 
 const issueUrl = (github: GithubConfig, number: number) => `https://github.com/${github.repo}/issues/${number}`
 
-async function moveToColumn($: EngineInterface, { github, ids }: Board, number: number, column: Column) {
+async function moveToColumn($: EngineInterface, { github, ids }: Board, number: number, column: Column, comment?: string) {
   const itemId = await gh($, addToBoardCommand(ownerOf(github), ids, issueUrl(github, number)))
   await gh($, setColumnCommand(ids, itemId, column))
+  if (comment !== undefined) await gh($, commentCommand(github.repo ?? '', number, comment))
 }
+
+const stageDetail = (state: LoopState, round: number, pullRequest?: string) => ({ branch: state.branch as string, base: state.base as string, round, pullRequest })
 
 const labelOf = (state: LoopState, stage: Stage) => (stage === 'kickoff' ? `kickoff:#${state.milestone}` : `${stage}:#${state.issue} round ${state.round + 1}`)
 
@@ -287,8 +290,8 @@ async function startSubIssue($: EngineInterface, found: Board, state: LoopState,
   const resuming = state.issue === subIssue.number
   const relaunching = resuming && state.stage !== undefined
   const place = await prepareWorktree($, found, state, subIssue)
-  await moveToColumn($, found, subIssue.number, 'in_progress')
   const next: LoopState = { ...state, issue: subIssue.number, title: subIssue.title, ...place, round: relaunching ? state.round : 0, defects: resuming ? state.defects : [] }
+  await moveToColumn($, found, subIssue.number, 'in_progress', stageComment('in_progress', stageDetail(next, next.round + 1)))
   await launchStage($, next, 'implement', subIssue.body)
   return `#${subIssue.number} "${subIssue.title}": In Progress on ${place.branch} (from ${place.base}); implementing`
 }
@@ -346,15 +349,15 @@ async function runCommand($: EngineInterface, args: string) {
 async function finishSubIssue($: EngineInterface, found: Board, state: LoopState) {
   const branch = state.branch as string
   await run($, ['git', '-C', state.worktree as string, 'push', '-u', 'origin', branch])
-  await gh($, pullRequestCommand(found.github.repo ?? '', { base: state.base as string, head: branch, title: state.title ?? branch, number: state.issue as number }))
-  await moveToColumn($, found, state.issue as number, 'done')
+  const pullRequest = await gh($, pullRequestCommand(found.github.repo ?? '', { base: state.base as string, head: branch, title: state.title ?? branch, number: state.issue as number }))
+  await moveToColumn($, found, state.issue as number, 'done', stageComment('done', stageDetail(state, state.round, pullRequest)))
   await run($, ['git', '-C', await repositoryRoot($), 'worktree', 'remove', '--force', state.worktree as string]).catch(() => '')
   return { ...state, tip: branch }
 }
 
 async function onImplemented($: EngineInterface, found: Board, state: LoopState, result: StageResult) {
   if (result.status !== 'done') return escalate($, found, state, state.issue as number, escalationComment(result.question || 'The implementer stopped without a question.'))
-  await moveToColumn($, found, state.issue as number, 'qa')
+  await moveToColumn($, found, state.issue as number, 'qa', stageComment('qa', stageDetail(state, state.round + 1)))
   const { body } = await readIssue($, found.github, state.issue as number)
   await launchStage($, state, 'review', body)
   return `#${state.issue} in QA: reviewing (round ${state.round + 1})`
@@ -372,8 +375,11 @@ async function onReviewed($: EngineInterface, found: Board, state: LoopState, re
     return `#${number} Done, PR opened from ${state.branch} into ${state.base}. ${next}`
   }
   await gh($, commentCommand(found.github.repo ?? '', number, outcome.comment))
-  await moveToColumn($, found, number, 'in_progress')
-  if (round >= MAX_REVIEW_ROUNDS) return escalate($, found, { ...state, round }, number, escalationComment(`${MAX_REVIEW_ROUNDS} review rounds ended without acceptance. Decide how to proceed: clarify the plan or checklist, or fix it by hand.`))
+  if (round >= MAX_REVIEW_ROUNDS) {
+    await moveToColumn($, found, number, 'in_progress')
+    return escalate($, found, { ...state, round }, number, escalationComment(`${MAX_REVIEW_ROUNDS} review rounds ended without acceptance. Decide how to proceed: clarify the plan or checklist, or fix it by hand.`))
+  }
+  await moveToColumn($, found, number, 'in_progress', stageComment('in_progress', stageDetail(state, round + 1)))
   const defects = outcome.comment.split('\n').filter(line => line.startsWith('- ') || line.startsWith('  '))
   await launchStage($, { ...state, round, defects }, 'implement', outcome.body)
   return `#${number} review round ${round} found defects: back to In Progress, implementing again`
