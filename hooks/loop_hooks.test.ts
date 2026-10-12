@@ -264,14 +264,14 @@ test('a stage Workflow call is refused while another stage runs', async ($, on) 
 
   const called = await $.tool.call({ tool: 'Workflow', name: 'ouroboros:stage', args: {} })
 
-  expect(called).toEqual({ deny: 'ouroboros is running review:#11 round 1; wait for its result, or /ouroboros stop' })
+  expect(called).toEqual({ deny: 'ouroboros is running review:#11 round 1; wait for its result, or `/ouroboros stop`' })
   expect(workflowCalls).toEqual([])
 })
 
 test('kickoff is refused while a stage of the loop runs', async ($, on) => {
   const { launches } = world(on, working('review'), [MILESTONE], [])
 
-  expect((await run($, 'kickoff 3')).text).toBe('ouroboros is running review:#11 round 1; wait for its result, or /ouroboros stop')
+  expect((await run($, 'kickoff 3')).text).toBe('ouroboros is running review:#11 round 1; wait for its result, or `/ouroboros stop`')
   expect(launches).toEqual([])
 })
 
@@ -306,8 +306,8 @@ test('the architect result creates, updates and drops sub-issues, writes the mil
 
   const delivered = await deliver($, plan(tasks))
 
-  expect(delivered).toEqual({ consumed: 'ouroboros: kickoff #3: created #13; updated #11; dropped #12; unchanged none; left closed #10. Next: /ouroboros start 3' })
-  expect(submitted).toEqual(['ouroboros: kickoff #3: created #13; updated #11; dropped #12; unchanged none; left closed #10. Next: /ouroboros start 3'])
+  expect(delivered).toEqual({ text: 'ouroboros: kickoff #3: created #13; updated #11; dropped #12; unchanged none; left closed #10. Next: `/ouroboros start 3`' })
+  expect(submitted).toEqual([])
   expect(writes).toEqual(['create #13', 'link #13', 'edit #11', 'close #12', 'edit #3'])
   expect(byNumber.get(13)?.body).toContain('## Depends on\n#11')
   expect(byNumber.get(12)).toMatchObject({ state: 'closed', stateReason: 'not planned', comments: [KICKOFF_DROPPED_COMMENT] })
@@ -318,11 +318,11 @@ test('the architect result creates, updates and drops sub-issues, writes the mil
 })
 
 test('a rejected plan applies nothing and says why', async ($, on) => {
-  const { writes, submitted, deliver } = world(on, kickingOff(), [MILESTONE, issue(10, 'Old done', { state: 'closed' })], [10])
+  const { writes, deliver } = world(on, kickingOff(), [MILESTONE, issue(10, 'Old done', { state: 'closed' })], [10])
 
-  await deliver($, plan([planned('Old again', { issue: 10 })]))
+  const delivered = await deliver($, plan([planned('Old again', { issue: 10 })]))
 
-  expect(submitted).toEqual(['ouroboros: kickoff #3 rejected, nothing applied: task 1 revises #10, which is closed'])
+  expect(delivered).toEqual({ text: 'ouroboros: kickoff #3 rejected, nothing applied: task 1 revises #10, which is closed' })
   expect(writes).toEqual([])
 })
 
@@ -346,7 +346,7 @@ test('start refuses a checkout with uncommitted changes on another branch and to
 
   const answered = await run($, 'start 3')
 
-  expect(answered.text).toBe('the session checkout has uncommitted changes on main: commit or stash them, then /ouroboros start 3')
+  expect(answered.text).toBe('the session checkout has uncommitted changes on main: commit or stash them, then `/ouroboros start 3`')
   expect(byNumber.get(11)?.column).toBe('Planned')
   expect(writes).toEqual([])
   expect(commands).toEqual([])
@@ -358,7 +358,7 @@ test('a sub-issue whose checklist is incomplete is not started: it is labelled n
 
   const answered = await run($, 'start 3')
 
-  expect(answered.text).toBe('#11 needs you: see its comment, then remove needs-owner and run /ouroboros start 3')
+  expect(answered.text).toBe('#11 needs you: see its comment, then remove needs-owner and run `/ouroboros start 3`')
   expect(byNumber.get(11)?.labels).toEqual(['needs-owner'])
   expect(byNumber.get(11)?.comments[0]).toContain('This sub-issue cannot start: Checklist are missing or incomplete.')
   expect(byNumber.get(11)?.column).toBe('Planned')
@@ -369,7 +369,7 @@ test('a sub-issue whose checklist is incomplete is not started: it is labelled n
 test('start waits while the sub-issue still carries needs-owner', async ($, on) => {
   const { launches } = world(on, BASE_FILES, [MILESTONE, issue(11, 'Page list', { column: 'Planned', labels: ['needs-owner'] })], [11])
 
-  expect((await run($, 'start 3')).text).toBe('#11 still carries needs-owner: answer its comment, remove the label, then /ouroboros start 3')
+  expect((await run($, 'start 3')).text).toBe('#11 still carries needs-owner: answer its comment, remove the label, then `/ouroboros start 3`')
   expect(launches).toEqual([])
 })
 
@@ -388,9 +388,10 @@ test('a finished implementer moves the sub-issue to QA and offers the review sta
 test('a blocked implementer escalates its question to the owner and stops', async ($, on) => {
   const { disk, byNumber, launches, submitted, deliver } = world(on, working('implement'), [MILESTONE, issue(11, 'Page list', { column: 'In Progress' })], [11])
 
-  await deliver($, { status: 'blocked', question: 'Which locale is the default?' })
+  const delivered = await deliver($, { status: 'blocked', question: 'Which locale is the default?' })
 
-  expect(submitted).toEqual(['ouroboros: #11 needs you: see its comment, then remove needs-owner and run /ouroboros start 3'])
+  expect(delivered).toEqual({ text: 'ouroboros: #11 needs you: see its comment, then remove needs-owner and run `/ouroboros start 3`' })
+  expect(submitted).toEqual([])
   expect(byNumber.get(11)?.labels).toEqual(['needs-owner'])
   expect(byNumber.get(11)?.comments[0]).toContain('Which locale is the default?')
   expect(launches).toEqual([])
@@ -409,9 +410,10 @@ test('an accepted review ticks every item, pushes, opens the PR, moves the sub-i
   const next = issue(12, 'Page search', { column: 'Planned', body: renderTaskBody({ ...TASK, depends_on: [11] }) })
   const { disk, byNumber, writes, commands, launches, submitted, deliver } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' }), next], [11, 12], { currentBranch: 'work/11-page-list' })
 
-  await deliver($, ALL_PASS)
+  const delivered = await deliver($, ALL_PASS)
 
-  expect(submitted).toEqual([`ouroboros: #11 Done: https://github.com/${REPO}/pull/99 opened from work/11-page-list into main; show it in this session's PR bar. #12 "Page search": In Progress on work/12-page-search (from work/11-page-list); implementing`])
+  expect(submitted).toEqual([])
+  expect(delivered).toEqual({ text: `ouroboros: #11 Done: https://github.com/${REPO}/pull/99 opened from work/11-page-list into main; show it in this session's PR bar. #12 "Page search": In Progress on work/12-page-search (from work/11-page-list); implementing` })
 
   expect(byNumber.get(11)?.body).toContain('- [x] it lists')
   expect(byNumber.get(11)?.body).toContain('- [x] it filters')
@@ -544,17 +546,17 @@ test('a gh failure stops the loop and names the command', async ($, on) => {
   const stderr = 'GraphQL: No commits between main and work/11-page-list'
   const { disk, byNumber, launches, submitted, deliver } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' })], [11], { failing: ['gh pr create'], stderr })
 
-  await deliver($, ALL_PASS)
+  const reported = ((await deliver($, ALL_PASS)) as { text: string }).text
 
   expect(byNumber.get(11)?.body).toContain('- [ ] it lists')
   expect(byNumber.get(11)?.body).toContain('- [ ] it filters')
   expect(byNumber.get(11)).toMatchObject({ column: 'QA', comments: [] })
   expect(stateOf(disk).stage).toBeUndefined()
   expect(launches).toEqual([])
-  expect(submitted).toHaveLength(1)
-  expect(submitted[0]).toStartWith('ouroboros: stopped: `gh pr create -R acme/shop --base main --head work/11-page-list --title \'Page list\' --body-file -` failed: ')
-  expect(submitted[0]).toContain(stderr)
-  expect(submitted[0]).toEndWith('; GitHub is back as it was before the stage')
+  expect(submitted).toEqual([])
+  expect(reported).toStartWith('ouroboros: stopped: `gh pr create -R acme/shop --base main --head work/11-page-list --title \'Page list\' --body-file -` failed: ')
+  expect(reported).toContain(stderr)
+  expect(reported).toEndWith('; GitHub is back as it was before the stage')
 })
 
 test('a failed start deletes the branch it linked on GitHub', async ($, on) => {

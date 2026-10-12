@@ -77,7 +77,7 @@ Commands: `kickoff <n>`, `start <n>`, `status`, `stop`.
 | `hooks/github/` | board ids, gh commands, issue body parse and render, kickoff diff |
 | `agents/` | `architect`, `implementer`, `reviewer` |
 
-A hook cannot launch a workflow itself, so the hook writes the stage's brief to `.claude/ouroboros/briefs/`, keeps the launch in its state and submits one plain line, `ouroboros: next, <stage> #<n> round <r>. Launch it: Workflow name=ouroboros:stage`. The session calls the Workflow tool; the hook substitutes the stage's arguments, records the task id and refuses a second launch while one runs. When the task notification arrives, the hook reads the workflow's result from its output file, applies it, swallows the notification and reports one plain line. A missing result escalates. State lives in `.claude/ouroboros/state.json`; there are no worktrees.
+A hook cannot launch a workflow itself, so the hook writes the stage's brief to `.claude/ouroboros/briefs/`, keeps the launch in its state and submits one plain line, `ouroboros: next, <stage> #<n> round <r>. Launch it: Workflow name=ouroboros:stage`. The session calls the Workflow tool; the hook substitutes the stage's arguments, records the task id and refuses a second launch while one runs. When the task notification arrives, the hook reads the workflow's result from its output file, applies it and rewrites the notification into one plain line, so neither the workflow's raw result nor a blocked-prompt warning reaches the conversation. Commands in its lines are in backticks, never bare links. A missing result escalates. State lives in `.claude/ouroboros/state.json`; there are no worktrees.
 
 ## 6. Branches and PRs
 
