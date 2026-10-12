@@ -40,6 +40,7 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 type Setup = {
   scopes?: string
   push?: boolean
+  deleteBranchOnMerge?: boolean
   columns?: string[]
   labels?: string[]
   failing?: string[]
@@ -114,7 +115,8 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   const ghApi = (argv: readonly string[]) => {
     const path = argv.find(arg => arg.startsWith('repos/')) ?? ''
     if (argv.includes('user')) return `HTTP/2.0 200 OK\nX-Oauth-Scopes: ${setup.scopes ?? 'repo, project, read:org'}\n\n{"login":"octo"}`
-    if (path === `repos/${REPO}`) return String(setup.push ?? true)
+    if (path === `repos/${REPO}` && argv.includes('.permissions.push')) return String(setup.push ?? true)
+    if (path === `repos/${REPO}` && argv.includes('.delete_branch_on_merge')) return String(setup.deleteBranchOnMerge ?? true)
     if (argv.includes('graphql')) {
       const nodes = ['Auto-close issue', 'Item added to project'].map(name => ({ name, enabled: (setup.enabledWorkflows ?? []).includes(name) }))
       return JSON.stringify({ data: { node: { workflows: { nodes } } } })
@@ -639,6 +641,15 @@ test('doctor still names missing columns when gh cannot read the board workflows
   expect(answered).toStartWith('ouroboros doctor found 2 problems:')
   expect(answered).toContain('- `gh api graphql -f')
   expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
+})
+
+test('doctor names the delete-head-branches setting when it is off', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [], { deleteBranchOnMerge: false })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 1 problems:')
+  expect(answered).toContain('- the setting "Automatically delete head branches" of acme/shop is off, so a stacked PR can merge into a branch already in the default branch: turn it on under Settings > General > Pull Requests, or run gh api -X PATCH repos/acme/shop -F delete_branch_on_merge=true')
 })
 
 test('doctor says the setup is ready', async ($, on) => {

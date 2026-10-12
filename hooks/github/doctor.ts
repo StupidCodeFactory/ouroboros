@@ -20,6 +20,9 @@ export const scopeProblems = (userAnswer: string) => {
 export const pushProblems = (login: string, repo: string, pushAnswer: string) =>
   pushAnswer.trim() === 'true' ? [] : [`${login} cannot push to ${repo}: ask for write access`]
 
+export const deleteHeadBranchesProblems = (repo: string, answer: string) =>
+  answer.trim() === 'true' ? [] : [`the setting "Automatically delete head branches" of ${repo} is off, so a stacked PR can merge into a branch already in the default branch: turn it on under Settings > General > Pull Requests, or run gh api -X PATCH repos/${repo} -F delete_branch_on_merge=true`]
+
 const absentColumns = (fields: FieldList, github: GithubConfig) => {
   const options = fields.fields.find(field => field.name === github.status_field)?.options ?? []
   return Object.values(github.columns).filter(name => !options.some(option => option.name === name))
