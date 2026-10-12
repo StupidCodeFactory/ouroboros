@@ -15,7 +15,11 @@ import {
   linkSubIssueCommand,
   pullRequestCommand,
   closePullRequestCommand,
+  deleteBranchCommand,
   deleteCommentCommand,
+  developCommand,
+  linkedBranchOf,
+  linkedBranchesCommand,
   removeLabelCommand,
   setColumnCommand,
   shellCommand,
@@ -162,4 +166,18 @@ test('undoing a comment deletes it by the id in its url', () => {
 
 test('undoing a pull request closes it and keeps its branch', () => {
   expect(closePullRequestCommand(REPO, 'https://github.com/acme/shop/pull/99')).toEqual({ argv: ['gh', 'pr', 'close', 'https://github.com/acme/shop/pull/99', '-R', REPO, '--delete-branch=false'] })
+})
+
+test('a sub-issue branch is created on GitHub, linked to the issue, from its base', () => {
+  expect(developCommand(REPO, 12, 'work/12-page-list', 'main')).toEqual({ argv: ['gh', 'issue', 'develop', '12', '-R', REPO, '--name', 'work/12-page-list', '--base', 'main'] })
+})
+
+test('the linked branch of an issue is the first one gh lists', () => {
+  expect(linkedBranchesCommand(REPO, 12)).toEqual({ argv: ['gh', 'issue', 'develop', '12', '-R', REPO, '--list'] })
+  expect(linkedBranchOf('work/12-page-list\thttps://github.com/acme/shop/tree/work/12-page-list\nother\turl')).toBe('work/12-page-list')
+  expect(linkedBranchOf('')).toBeUndefined()
+})
+
+test('undoing a linked branch deletes it on GitHub', () => {
+  expect(deleteBranchCommand(REPO, 'work/12-page-list')).toEqual({ argv: ['gh', 'api', '-X', 'DELETE', 'repos/acme/shop/git/refs/heads/work/12-page-list'] })
 })

@@ -123,3 +123,17 @@ export const deleteCommentCommand = (repo: string, commentUrl: string): GhComman
 export const closePullRequestCommand = (repo: string, pullRequestUrl: string): GhCommand => ({
   argv: ['gh', 'pr', 'close', pullRequestUrl, '-R', repo, '--delete-branch=false'],
 })
+
+export const developCommand = (repo: string, number: number, branch: string, base: string): GhCommand => ({
+  argv: ['gh', 'issue', 'develop', String(number), '-R', repo, '--name', branch, '--base', base],
+})
+
+export const linkedBranchesCommand = (repo: string, number: number): GhCommand => ({
+  argv: ['gh', 'issue', 'develop', String(number), '-R', repo, '--list'],
+})
+
+export const linkedBranchOf = (listed: string) => listed.split('\n')[0]?.split('\t')[0] || undefined
+
+export const deleteBranchCommand = (repo: string, branch: string): GhCommand => ({
+  argv: ['gh', 'api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`],
+})

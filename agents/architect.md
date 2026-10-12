@@ -13,4 +13,5 @@ Return the milestone body and the task list:
 - `plan`: the steps in order, then a last line `Files: ` listing in backticks every path or glob the task may change.
 - `checklist`: items a reviewer can verify. Each names a command that fails before the task and passes once the item holds, such as a test runner filtered to one named example. No item without a command.
 - `depends_on`: `{issue: n}` for an existing sub-issue, `{task: n}` for another task of your list by its 1-based place. No cycles.
+- Never write `#` before a number unless it is a real issue of this repository: GitHub links every `#n`.
 - Revise rather than replace: a task that continues an open sub-issue names it in `issue`. An open sub-issue you leave out is closed as not planned. Never name a closed one.
