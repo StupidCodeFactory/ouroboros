@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { WORKFLOWS_QUERY, autoCloseProblems, boardProblems, doctorAnswer, labelProblems, loginOf, prdProblems, pushProblems, scopeProblems } from './github/doctor'
+import { WORKFLOWS_QUERY, autoCloseProblems, boardProblems, deleteHeadBranchesProblems, doctorAnswer, labelProblems, loginOf, prdProblems, pushProblems, scopeProblems } from './github/doctor'
 import { milestoneGaps, renderMilestoneBody } from './github/contract'
 import type { MilestoneBody } from './github/contract'
 import {
@@ -462,6 +462,7 @@ async function repoChecks($: EngineInterface, github: GithubConfig, login: Promi
   const repo = github.repo ?? ''
   const checks = [
     login.then(name => run($, ['gh', 'api', `repos/${repo}`, '--jq', '.permissions.push']).then(answer => pushProblems(name, repo, answer))),
+    run($, ['gh', 'api', `repos/${repo}`, '--jq', '.delete_branch_on_merge']).then(answer => deleteHeadBranchesProblems(repo, answer)),
     boardCheck($, github),
     run($, ['gh', 'label', 'list', '-R', repo, '--limit', '500', '--json', 'name']).then(answer => labelProblems(repo, github.labels.needs_owner, answer)),
   ]

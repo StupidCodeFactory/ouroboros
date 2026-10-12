@@ -39,7 +39,7 @@ The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `
 
 Everything but `github.project` has the default shown. `branch_prefix` (default `work/`) sets the prefix of task branches. `gh` must be logged in as an account that can edit the repository's issues and the project.
 
-Then run `/ouroboros doctor`. It checks the `gh` account's `repo` and `project` scopes and push rights, the board, its status field, columns and "Auto-close issue" workflow, the `needs-owner` label and the PRD, and names every problem in one answer, or says the setup is ready.
+Then run `/ouroboros doctor`. It checks the `gh` account's `repo` and `project` scopes and push rights, the repository setting "Automatically delete head branches", the board, its status field, columns and "Auto-close issue" workflow, the `needs-owner` label and the PRD, and names every problem in one answer, or says the setup is ready. Turn "Automatically delete head branches" on under Settings > General > Pull Requests: without it GitHub keeps a merged base branch, and a stacked PR merges into it instead of the default branch.
 
 ## Use
 
