@@ -36,8 +36,10 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 })
 
 type Listed = { id: string; description: string; type: string; status: string }
+type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[] }
+const ALL_COLUMNS = ['Milestones', 'Planned', 'In Progress', 'QA', 'Done']
 
-const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = []) => {
+const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = [], setup: Setup = {}) => {
   const disk = new Map(Object.entries(files))
   const byNumber = new Map(issues.map(each => [each.number, each]))
   const subIssues = [...subIssueNumbers]
@@ -82,6 +84,8 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   }
   const ghApi = (argv: readonly string[]) => {
     const path = argv.find(arg => arg.startsWith('repos/')) ?? ''
+    if (argv.includes('user')) return `HTTP/2.0 200 OK\nX-Oauth-Scopes: ${setup.scopes ?? 'repo, project, read:org'}\n\n{"login":"octo"}`
+    if (path === `repos/${REPO}`) return String(setup.push ?? true)
     if (argv.includes('POST')) {
       const id = Number((argv.find(arg => arg.startsWith('sub_issue_id=')) ?? '').split('=')[1])
       const linked = [...byNumber.values()].find(each => each.id === id)
@@ -100,7 +104,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   const ghProject = (argv: readonly string[]) => {
     if (argv[2] === 'list') return JSON.stringify({ projects: [{ number: 3, id: 'PVT_board', title: 'Shop board' }] })
     if (argv[2] === 'field-list') {
-      const options = ['Milestones', 'Planned', 'In Progress', 'QA', 'Done'].map(name => ({ id: `o_${name}`, name }))
+      const options = (setup.columns ?? ALL_COLUMNS).map(name => ({ id: `o_${name}`, name }))
       return JSON.stringify({ fields: [{ id: 'F_status', name: 'Status', options }] })
     }
     if (argv[2] === 'item-add') return `PVTI_${flag(argv, '--url').split('/').pop()}`
@@ -128,6 +132,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
     if (tool === 'gh' && noun === 'api') return answer(ghApi(e.argv))
     if (tool === 'gh' && noun === 'project') return answer(ghProject(e.argv))
     if (tool === 'gh' && noun === 'pr') return answer(ghPr(e.argv))
+    if (tool === 'gh' && noun === 'label') return answer(JSON.stringify((setup.labels ?? ['needs-owner']).map(name => ({ name }))))
     return answer('')
   })
   on('turn.complete', (_, e) => ({ text: e.answer }))
@@ -422,4 +427,24 @@ test('with every sub-issue done, start says the milestone is finished', async ($
   world(on, BASE_FILES, [MILESTONE, issue(11, 'Page list', { column: 'Done' })], [11])
 
   expect((await run($, 'start 3')).text).toBe('milestone #3 finished: every sub-issue is Done')
+})
+
+test('doctor names every missing piece of the setup', async ($, on) => {
+  const setup = { scopes: 'repo, read:org', push: false, columns: ALL_COLUMNS.filter(name => name !== 'QA'), labels: ['bug'] }
+  world(on, { '.claude/ouroboros.json': CONFIG }, [MILESTONE], [], [], [], [], setup)
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 5 problems:')
+  expect(answered).toContain('- the gh token of octo lacks the project scope: run gh auth refresh -s project')
+  expect(answered).toContain('- octo cannot push to acme/shop')
+  expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
+  expect(answered).toContain('- missing label "needs-owner" in acme/shop')
+  expect(answered).toContain('- no PRD at docs/prd.md')
+})
+
+test('doctor says the setup is ready', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [])
+
+  expect((await run($, 'doctor')).text).toBe('ouroboros doctor: ready')
 })
