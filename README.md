@@ -58,4 +58,4 @@ Every accepted sub-issue gets a PR closing it. While a PR is open, the next sub-
 ./scripts/pre-push
 ```
 
-`pre-push` runs `claude plugin test .` and validates the manifest.
+`pre-push` runs `claude plugin test .` and validates the manifest. It always runs the pushing worktree's own `scripts/pre-push` in that worktree; `./scripts/acceptance/pre_push_own_checkout.sh` checks this.

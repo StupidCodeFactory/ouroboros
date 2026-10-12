@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
-cd "$(dirname "$0")/.."
+top=$(git rev-parse --show-toplevel)
+own="$top/scripts/pre-push"
+running="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+[ "$(cd "$top/scripts" && pwd -P)/pre-push" = "$running" ] || exec "$own" "$@"
+cd "$top"
 B=$(find "$HOME/Library/Application Support/Claude/claude-code" -name claude -type f -perm +111 2>/dev/null | sort | tail -1)
 [ -n "$B" ] || B=claude
 ./scripts/guard_no_outside_skills.sh
