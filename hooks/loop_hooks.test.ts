@@ -377,6 +377,21 @@ test('start relaunches the stage when its agent is gone', async ($, on) => {
   expect(spawned(launches)).toEqual([['ouroboros:implementer', 'implement:#11 round 1']])
 })
 
+test('start resumes the sub-issue in flight after a restart', async ($, on) => {
+  const files = { ...working('review', { agent: 'agent-stale' }), '.claude/ouroboros/worktrees/11': '' }
+  const { disk, byNumber, commands, launches } = world(on, files, [MILESTONE, issue(11, 'Page list', { column: 'QA' }), issue(12, 'Other', { column: 'Planned' })], [11, 12])
+
+  const answered = await run($, 'start 3')
+
+  expect(answered.text).toBe('#11 "Page list": resumed review round 1 on work/11-page-list')
+  expect(spawned(launches)).toEqual([['ouroboros:reviewer', 'review:#11 round 1']])
+  expect(launches[0]?.cwd).toBe(`${ROOT}/.claude/ouroboros/worktrees/11`)
+  expect(byNumber.get(11)?.column).toBe('QA')
+  expect(commands).toEqual([])
+  expect(byNumber.get(12)).toMatchObject({ column: 'Planned', comments: [], labels: [] })
+  expect(stateOf(disk)).toMatchObject({ issue: 11, stage: 'review', round: 0 })
+})
+
 test('an answer from another agent is left alone', async ($, on) => {
   const { writes, launches } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' })], [11])
 
