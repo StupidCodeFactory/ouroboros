@@ -1,6 +1,6 @@
 {
   "name": "ouroboros",
-  "version": "0.24.2",
+  "version": "0.25.0",
   "description": "GitHub milestone loop: an architect turns PRD milestones into sub-issues with checklists; each sub-issue is implemented, reviewed until its checklist passes, and moved across the project board.",
   "workflows": "./workflows",
   "author": {
