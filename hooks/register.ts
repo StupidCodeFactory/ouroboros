@@ -284,13 +284,25 @@ async function startSubIssue($: EngineInterface, found: Board, state: LoopState,
   if (subIssue.labels.includes(found.github.labels.needs_owner)) return `#${subIssue.number} still carries ${found.github.labels.needs_owner}: answer its comment, remove the label, then /ouroboros start ${state.milestone}`
   const unready = readinessComment(subIssue.body)
   if (unready !== undefined) return escalate($, found, state, subIssue.number, unready)
+  if (isInFlight(state, subIssue, found.github)) return resumeSubIssue($, found, state, subIssue)
   const resuming = state.issue === subIssue.number
-  const relaunching = resuming && state.stage !== undefined
   const place = await prepareWorktree($, found, state, subIssue)
   await moveToColumn($, found, subIssue.number, 'in_progress')
-  const next: LoopState = { ...state, issue: subIssue.number, title: subIssue.title, ...place, round: relaunching ? state.round : 0, defects: resuming ? state.defects : [] }
+  const next: LoopState = { ...state, issue: subIssue.number, title: subIssue.title, ...place, round: 0, defects: resuming ? state.defects : [] }
   await launchStage($, next, 'implement', subIssue.body)
   return `#${subIssue.number} "${subIssue.title}": In Progress on ${place.branch} (from ${place.base}); implementing`
+}
+
+const isInFlight = (state: LoopState, subIssue: BoardSubIssue, github: GithubConfig) =>
+  state.stage !== undefined && state.issue === subIssue.number && subIssue.state === 'open' && (subIssue.column === github.columns.in_progress || subIssue.column === github.columns.qa)
+
+async function resumeSubIssue($: EngineInterface, found: Board, state: LoopState, subIssue: BoardSubIssue) {
+  const stage = state.stage === 'review' || subIssue.column === found.github.columns.qa ? 'review' : 'implement'
+  const column = stage === 'review' ? 'qa' : 'in_progress'
+  const place = await prepareWorktree($, found, state, subIssue)
+  if (subIssue.column !== found.github.columns[column]) await moveToColumn($, found, subIssue.number, column)
+  await launchStage($, { ...state, title: subIssue.title, ...place }, stage, subIssue.body)
+  return `#${subIssue.number} "${subIssue.title}": resumed ${stage} round ${state.round + 1} on ${place.branch}`
 }
 
 const isActive = (subIssue: BoardSubIssue, github: GithubConfig) => subIssue.state === 'open' && (subIssue.column === github.columns.in_progress || subIssue.column === github.columns.qa || subIssue.column === github.columns.planned)
