@@ -1,5 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
+import { boardProblems, doctorAnswer, labelProblems, loginOf, prdProblems, pushProblems, scopeProblems } from './github/doctor'
 import { milestoneGaps, renderMilestoneBody } from './github/contract'
 import type { MilestoneBody } from './github/contract'
 import {
@@ -52,7 +53,7 @@ const AGENTS: Record<Stage, string> = { kickoff: 'architect', implement: 'implem
 
 const OUROBOROS_COMMAND = {
   name: 'ouroboros',
-  description: 'GitHub milestone loop: /ouroboros kickoff <milestone-issue> | start <milestone-issue> | status | stop',
+  description: 'GitHub milestone loop: /ouroboros kickoff <milestone-issue> | start <milestone-issue> | status | stop | doctor',
 }
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean)
@@ -100,11 +101,16 @@ async function githubConfig($: EngineInterface, config: Config): Promise<GithubC
 
 const ownerOf = (github: GithubConfig) => (github.repo ?? '').split('/')[0] ?? ''
 
-async function boardIds($: EngineInterface, github: GithubConfig) {
+async function boardAnswers($: EngineInterface, github: GithubConfig) {
   const owner = ownerOf(github)
   const projects = JSON.parse(await run($, ['gh', 'project', 'list', '--owner', owner, '--limit', '100', '--format', 'json']))
   const project = projects.projects.find((candidate: { title: string }) => candidate.title === github.project)
   const fields = project === undefined ? { fields: [] } : JSON.parse(await run($, ['gh', 'project', 'field-list', String(project.number), '--owner', owner, '--format', 'json']))
+  return { projects, fields }
+}
+
+async function boardIds($: EngineInterface, github: GithubConfig) {
+  const { projects, fields } = await boardAnswers($, github)
   return boardIdsOf(projects, fields, github)
 }
 
@@ -258,10 +264,23 @@ async function prepareWorktree($: EngineInterface, found: Board, state: LoopStat
   if (state.issue === subIssue.number && state.worktree === worktree && state.base !== undefined && (await $.fs.exists(worktree))) return { branch, worktree, base: state.base }
   await run($, ['git', '-C', root, 'fetch', 'origin'])
   const main = await defaultBranch($, root)
+  if (await refExists($, root, `refs/remotes/origin/${branch}`)) {
+    if (!(await $.fs.exists(worktree))) await addWorktreeOnPushedBranch($, root, branch, worktree)
+    return { branch, worktree, base: state.base ?? main }
+  }
   const stacked = state.tip !== undefined && (await isOpenPullRequestHead($, found.github, state.tip))
   const base = stacked ? (state.tip as string) : main
   if (!(await $.fs.exists(worktree))) await run($, ['git', '-C', root, 'worktree', 'add', '-B', branch, worktree, stacked ? base : `origin/${main}`])
   return { branch, worktree, base }
+}
+
+async function refExists($: EngineInterface, root: string, ref: string) {
+  return (await $.process.run(['git', '-C', root, 'rev-parse', '--verify', '--quiet', ref])).exitCode === 0
+}
+
+async function addWorktreeOnPushedBranch($: EngineInterface, root: string, branch: string, worktree: string) {
+  if (await refExists($, root, `refs/heads/${branch}`)) return run($, ['git', '-C', root, 'worktree', 'add', worktree, branch])
+  return run($, ['git', '-C', root, 'worktree', 'add', '--track', '-b', branch, worktree, `origin/${branch}`])
 }
 
 const stageBrief = (state: LoopState, body: string): StageBrief => ({
@@ -323,8 +342,19 @@ async function advance($: EngineInterface, state: LoopState) {
     await writeState($, cleared)
     return next.none
   }
-  return startSubIssue($, found, cleared, next.issue)
+  return startSubIssue($, found, isStarted(next.issue, found.github) ? rebuiltState(found, cleared, next.issue) : cleared, next.issue)
 }
+
+const isStarted = (subIssue: BoardSubIssue, github: GithubConfig) => subIssue.column === github.columns.in_progress || subIssue.column === github.columns.qa
+
+const rebuiltState = (found: Board, cleared: LoopState, subIssue: BoardSubIssue): LoopState => ({
+  ...cleared,
+  issue: subIssue.number,
+  title: subIssue.title,
+  stage: subIssue.column === found.github.columns.qa ? 'review' : 'implement',
+  branch: branchName(found.config.branch_prefix ?? 'work/', subIssue.number, subIssue.title),
+  round: 0,
+})
 
 async function start($: EngineInterface, state: LoopState, argument: string) {
   const number = kickoffIssueNumber(argument)
@@ -345,6 +375,43 @@ async function stop($: EngineInterface, state: LoopState) {
   return 'stopped: a running agent keeps going but its answer is ignored; /ouroboros start <milestone> resumes'
 }
 
+const problemsOf = (check: Promise<string[]>) => check.catch(error => [error instanceof Error ? error.message : String(error)])
+
+async function boardCheck($: EngineInterface, github: GithubConfig) {
+  if (github.project === undefined) return [`ouroboros needs github.project in ${CONFIG_PATH}`]
+  const { projects, fields } = await boardAnswers($, github)
+  return boardProblems(projects, fields, github)
+}
+
+async function prdCheck($: EngineInterface, config: Config) {
+  const prd = config.prd ?? 'docs/prd.md'
+  const path = await projectPath($, prd)
+  return prdProblems(prd, (await $.fs.exists(path)) ? await $.fs.read(path) : undefined)
+}
+
+async function repoChecks($: EngineInterface, github: GithubConfig, login: Promise<string>) {
+  const repo = github.repo ?? ''
+  const checks = [
+    login.then(name => run($, ['gh', 'api', `repos/${repo}`, '--jq', '.permissions.push']).then(answer => pushProblems(name, repo, answer))),
+    boardCheck($, github),
+    run($, ['gh', 'label', 'list', '-R', repo, '--limit', '500', '--json', 'name']).then(answer => labelProblems(repo, github.labels.needs_owner, answer)),
+  ]
+  return (await Promise.all(checks.map(problemsOf))).flat()
+}
+
+async function doctor($: EngineInterface) {
+  const config = await readConfig($)
+  if (config === undefined) return doctorAnswer([`no ${CONFIG_PATH} at the checkout root: create one (README, Setup)`])
+  const user = run($, ['gh', 'api', '-i', 'user'])
+  const login = user.then(loginOf, () => loginOf(''))
+  const checks = [
+    user.then(scopeProblems),
+    githubConfig($, config).then(github => repoChecks($, github, login)),
+    prdCheck($, config),
+  ]
+  return doctorAnswer((await Promise.all(checks.map(problemsOf))).flat())
+}
+
 async function runCommand($: EngineInterface, args: string) {
   const [head = '', ...rest] = words(args)
   const state = await readState($)
@@ -352,6 +419,7 @@ async function runCommand($: EngineInterface, args: string) {
   if (head === 'start') return start($, state, rest.join(' '))
   if (head === 'status') return statusText(state)
   if (head === 'stop') return stop($, state)
+  if (head === 'doctor') return doctor($)
   return OUROBOROS_COMMAND.description
 }
 

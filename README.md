@@ -38,6 +38,8 @@ The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `
 
 Everything but `github.project` has the default shown. `branch_prefix` (default `work/`) sets the prefix of task branches. `gh` must be logged in as an account that can edit the repository's issues and the project.
 
+Then run `/ouroboros doctor`. It checks the `gh` account's `repo` and `project` scopes and push rights, the board, its status field and columns, the `needs-owner` label and the PRD, and names every problem in one answer, or says the setup is ready.
+
 ## Use
 
 | Command | Does |
@@ -46,6 +48,7 @@ Everything but `github.project` has the default shown. `branch_prefix` (default 
 | `/ouroboros start <milestone-issue>` | Runs the loop: the next ready sub-issue, then the one after, until none is left or one needs you. |
 | `/ouroboros status` | Shows the milestone, the stage and the sub-issue in progress. |
 | `/ouroboros stop` | Stops following the running agent. `start` resumes. |
+| `/ouroboros doctor` | Checks the setup and names every missing piece, or says it is ready. |
 
 A sub-issue needs you (`needs-owner` label plus a comment) in three cases: its body is incomplete, the implementer is blocked, or three review rounds end without acceptance. Fix the cause, remove the label and run `start` again.
 
