@@ -407,9 +407,11 @@ test('a stage workflow that returned no result escalates instead of guessing', a
 
 test('an accepted review ticks every item, pushes, opens the PR, moves the sub-issue to Done and starts the next one stacked on it', async ($, on) => {
   const next = issue(12, 'Page search', { column: 'Planned', body: renderTaskBody({ ...TASK, depends_on: [11] }) })
-  const { disk, byNumber, writes, commands, launches, deliver } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' }), next], [11, 12], { currentBranch: 'work/11-page-list' })
+  const { disk, byNumber, writes, commands, launches, submitted, deliver } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' }), next], [11, 12], { currentBranch: 'work/11-page-list' })
 
   await deliver($, ALL_PASS)
+
+  expect(submitted).toEqual([`ouroboros: #11 Done: https://github.com/${REPO}/pull/99 opened from work/11-page-list into main; show it in this session's PR bar. #12 "Page search": In Progress on work/12-page-search (from work/11-page-list); implementing`])
 
   expect(byNumber.get(11)?.body).toContain('- [x] it lists')
   expect(byNumber.get(11)?.body).toContain('- [x] it filters')

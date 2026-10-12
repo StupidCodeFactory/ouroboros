@@ -498,7 +498,7 @@ async function finishSubIssue($: EngineInterface, found: Board, state: LoopState
   const pullRequest = await gh($, pullRequestCommand(found.github.repo ?? '', { base: state.base as string, head: branch, title: state.title ?? branch, number: state.issue as number }))
   undoWith(closePullRequestCommand(found.github.repo ?? '', pullRequest))
   await moveToColumn($, found, state.issue as number, 'done', stageComment('done', stageDetail(state, state.round, pullRequest)))
-  return { ...state, tip: branch }
+  return { state: { ...state, tip: branch }, pullRequest }
 }
 
 async function onImplemented($: EngineInterface, found: Board, state: LoopState, result: StageResult) {
@@ -517,8 +517,8 @@ async function onReviewed($: EngineInterface, found: Board, state: LoopState, re
   const round = state.round + 1
   if (outcome.accepted) {
     const finished = await finishSubIssue($, found, { ...state, round })
-    const next = await advance($, withoutStage(finished))
-    return `#${number} Done, PR opened from ${state.branch} into ${state.base}. ${next}`
+    const next = await advance($, withoutStage(finished.state))
+    return `#${number} Done: ${finished.pullRequest} opened from ${state.branch} into ${state.base}; show it in this session's PR bar. ${next}`
   }
   await comment($, found.github.repo ?? '', number, outcome.comment)
   if (round >= MAX_REVIEW_ROUNDS) {
@@ -546,11 +546,11 @@ async function conductResult($: EngineInterface, state: LoopState, result: Recor
   return onReviewed($, found, settled, result === undefined ? { items: [], defects: ['The reviewer ended without a readable answer.'] } : (result as StageResult))
 }
 
-const STOPPING = /needs you|finished|no sub-issue|failed|rejected|kickoff #\d+:|^ouroboros|^no |^the session/
+const WORTH_SUBMITTING = /Done: |needs you|finished|no sub-issue|failed|rejected|kickoff #\d+:|^ouroboros|^no |^the session/
 
 async function report($: EngineInterface, note: string) {
   $.ui.toast(`ouroboros: ${note}`)
-  if (STOPPING.test(note)) submitWhenIdle($, `ouroboros: ${note}`)
+  if (WORTH_SUBMITTING.test(note)) submitWhenIdle($, `ouroboros: ${note}`)
 }
 
 const resultOf = (outputFileText: string): Record<string, unknown> | undefined => {

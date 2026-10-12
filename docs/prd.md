@@ -54,10 +54,11 @@ Acceptance:
 - The Workflow call of the pending stage runs with the arguments the hook kept, records its run, and a second launch is refused while it runs: `claude plugin test . 2>&1 | grep -F "(pass) the Workflow call of the pending stage records its run with the pending arguments"`
 - A stage's result is applied when its task notification arrives, the notification is swallowed and one plain line reports the outcome: `claude plugin test . 2>&1 | grep -F "(pass) the architect result creates, updates and drops sub-issues"`
 - Every sub-issue branch is created on GitHub with `gh issue develop`, linked to its issue, and checked out in the session's checkout; no worktree is created: `claude plugin test . 2>&1 | grep -F "(pass) start links the sub-issue branch on GitHub, checks it out in the session checkout and offers the implement stage"`
+- The implementer and reviewer work in the session's checkout, whether the Claude app made it as a worktree or not, so the app's diff pane shows their changes. Each opened PR reaches the session as one line with its URL, so the session shows it in the PR bar above the prompt: `claude plugin test . 2>&1 | grep -F "(pass) an accepted review ticks every item, pushes, opens the PR"`
 - `start` refuses uncommitted changes on another branch and touches nothing: `claude plugin test . 2>&1 | grep -F "(pass) start refuses a checkout with uncommitted changes on another branch and touches nothing"`
 - The plugin's tests pass: `./scripts/pre-push`
 
-Notes: a hook cannot launch a workflow, so the session makes the Workflow call the hook offers. Checking it live: run a sub-issue in the Claude app and watch the diff pane and the PR bar.
+Notes: a hook cannot launch a workflow, so the session makes the Workflow call the hook offers. Checking it live: run a sub-issue in a Claude app session (its own worktree included) and check that the diff pane shows the implementer's changes and the PR bar shows the opened PR.
 
 ### M2. A loop you can leave running
 
