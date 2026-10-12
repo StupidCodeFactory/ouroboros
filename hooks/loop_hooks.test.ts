@@ -36,7 +36,7 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 })
 
 type Listed = { id: string; description: string; type: string; status: string }
-type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[] }
+type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[]; failing?: string[] }
 const ALL_COLUMNS = ['Milestones', 'Planned', 'In Progress', 'QA', 'Done']
 
 const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = [], setup: Setup = {}) => {
@@ -120,6 +120,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   }
   on('process.run', (_, e) => {
     const [tool, noun] = e.argv
+    if (setup.failing?.some(command => e.argv.join(' ').startsWith(command))) return answer('', 1)
     if (e.argv.includes('--show-toplevel')) return answer(`${ROOT}\n`)
     if (e.argv.includes('symbolic-ref')) return answer('origin/main\n')
     if (e.argv.includes('rev-parse')) return answer('', remoteBranches.some(branch => e.argv.includes(`refs/remotes/origin/${branch}`)) ? 0 : 1)
@@ -440,6 +441,28 @@ test('doctor names every missing piece of the setup', async ($, on) => {
   expect(answered).toContain('- octo cannot push to acme/shop')
   expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
   expect(answered).toContain('- missing label "needs-owner" in acme/shop')
+  expect(answered).toContain('- no PRD at docs/prd.md')
+})
+
+test('doctor still checks push rights when gh cannot read the account', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [], [], [], [], { push: false, failing: ['gh api -i user'] })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 2 problems:')
+  expect(answered).toContain('- gh api -i failed: failed')
+  expect(answered).toContain('- the gh account cannot push to acme/shop')
+})
+
+test('doctor still checks the token and the PRD when gh cannot name the repo', async ($, on) => {
+  const config = JSON.stringify({ prd: 'docs/prd.md', github: { project: 'Shop board' } })
+  world(on, { '.claude/ouroboros.json': config }, [MILESTONE], [], [], [], [], { scopes: 'repo', failing: ['gh repo view'] })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 3 problems:')
+  expect(answered).toContain('- gh repo view failed: failed')
+  expect(answered).toContain('- the gh token of octo lacks the project scope: run gh auth refresh -s project')
   expect(answered).toContain('- no PRD at docs/prd.md')
 })
 

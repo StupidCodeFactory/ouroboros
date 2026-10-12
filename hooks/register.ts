@@ -389,22 +389,24 @@ async function prdCheck($: EngineInterface, config: Config) {
   return prdProblems(prd, (await $.fs.exists(path)) ? await $.fs.read(path) : undefined)
 }
 
-async function accountChecks($: EngineInterface, github: GithubConfig) {
-  const user = await run($, ['gh', 'api', '-i', 'user'])
+async function repoChecks($: EngineInterface, github: GithubConfig, login: Promise<string>) {
   const repo = github.repo ?? ''
-  const push = await problemsOf(run($, ['gh', 'api', `repos/${repo}`, '--jq', '.permissions.push']).then(answer => pushProblems(loginOf(user), repo, answer)))
-  return [...scopeProblems(user), ...push]
+  const checks = [
+    login.then(name => run($, ['gh', 'api', `repos/${repo}`, '--jq', '.permissions.push']).then(answer => pushProblems(name, repo, answer))),
+    boardCheck($, github),
+    run($, ['gh', 'label', 'list', '-R', repo, '--limit', '500', '--json', 'name']).then(answer => labelProblems(repo, github.labels.needs_owner, answer)),
+  ]
+  return (await Promise.all(checks.map(problemsOf))).flat()
 }
 
 async function doctor($: EngineInterface) {
   const config = await readConfig($)
   if (config === undefined) return doctorAnswer([`no ${CONFIG_PATH} at the checkout root: create one (README, Setup)`])
-  const github = await githubConfig($, config)
-  const repo = github.repo ?? ''
+  const user = run($, ['gh', 'api', '-i', 'user'])
+  const login = user.then(loginOf, () => loginOf(''))
   const checks = [
-    accountChecks($, github),
-    boardCheck($, github),
-    run($, ['gh', 'label', 'list', '-R', repo, '--limit', '500', '--json', 'name']).then(answer => labelProblems(repo, github.labels.needs_owner, answer)),
+    user.then(scopeProblems),
+    githubConfig($, config).then(github => repoChecks($, github, login)),
     prdCheck($, config),
   ]
   return doctorAnswer((await Promise.all(checks.map(problemsOf))).flat())
