@@ -382,8 +382,8 @@ async function boardCheck($: EngineInterface, github: GithubConfig) {
   const { projects, fields } = await boardAnswers($, github)
   const project = projects.projects.find((candidate: { title: string }) => candidate.title === github.project)
   if (project === undefined) return boardProblems(projects, fields, github)
-  const workflows = await run($, ['gh', 'api', 'graphql', '-f', `query=${WORKFLOWS_QUERY}`, '-F', `id=${project.id}`])
-  return [...boardProblems(projects, fields, github), ...autoCloseProblems(github.project, workflows)]
+  const workflows = run($, ['gh', 'api', 'graphql', '-f', `query=${WORKFLOWS_QUERY}`, '-F', `id=${project.id}`])
+  return [...boardProblems(projects, fields, github), ...(await problemsOf(workflows.then(answer => autoCloseProblems(github.project as string, answer))))]
 }
 
 async function prdCheck($: EngineInterface, config: Config) {

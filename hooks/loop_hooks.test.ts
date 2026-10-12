@@ -479,6 +479,16 @@ test('doctor names the auto-close workflow that closes a sub-issue before its PR
   expect(answered).toContain('- the "Auto-close issue" workflow of project "Shop board" closes a sub-issue when the loop moves it to Done, before its PR merges: turn it off under the project\'s Workflows')
 })
 
+test('doctor still names missing columns when gh cannot read the board workflows', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [], [], [], [], { columns: ALL_COLUMNS.filter(name => name !== 'QA'), failing: ['gh api graphql'] })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 2 problems:')
+  expect(answered).toContain('- gh api graphql failed: failed')
+  expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
+})
+
 test('doctor says the setup is ready', async ($, on) => {
   world(on, BASE_FILES, [MILESTONE], [])
 
