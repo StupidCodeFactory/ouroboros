@@ -106,3 +106,34 @@ export const boardIdsOf = (projects: ProjectList, fields: FieldList, github: Git
 }
 
 export const issueOfPosition = (tasks: PlannedTask[], created: Map<number, number>) => (position: number) => tasks[position - 1]?.issue ?? created.get(position) ?? 0
+
+const SHELL_SAFE = /^[\w@%+=:,./-]+$/
+
+export const shellCommand = (argv: readonly string[]) => argv.map(arg => (SHELL_SAFE.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`)).join(' ')
+
+export const removeLabelCommand = (repo: string, number: number, label: string): GhCommand => ({
+  argv: ['gh', 'issue', 'edit', String(number), '-R', repo, '--remove-label', label],
+})
+
+export const deleteCommentCommand = (repo: string, commentUrl: string): GhCommand | undefined => {
+  const id = /#issuecomment-(\d+)$/.exec(commentUrl)?.[1]
+  return id === undefined ? undefined : { argv: ['gh', 'api', '-X', 'DELETE', `repos/${repo}/issues/comments/${id}`] }
+}
+
+export const closePullRequestCommand = (repo: string, pullRequestUrl: string): GhCommand => ({
+  argv: ['gh', 'pr', 'close', pullRequestUrl, '-R', repo, '--delete-branch=false'],
+})
+
+export const developCommand = (repo: string, number: number, branch: string, base: string): GhCommand => ({
+  argv: ['gh', 'issue', 'develop', String(number), '-R', repo, '--name', branch, '--base', base],
+})
+
+export const linkedBranchesCommand = (repo: string, number: number): GhCommand => ({
+  argv: ['gh', 'issue', 'develop', String(number), '-R', repo, '--list'],
+})
+
+export const linkedBranchOf = (listed: string) => listed.split('\n')[0]?.split('\t')[0] || undefined
+
+export const deleteBranchCommand = (repo: string, branch: string): GhCommand => ({
+  argv: ['gh', 'api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`],
+})

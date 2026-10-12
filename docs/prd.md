@@ -45,6 +45,20 @@ Acceptance:
 
 Notes: the acceptance scripts read GitHub only and take the scratch repository and milestone from `OUROBOROS_SCRATCH_REPO` and `OUROBOROS_SCRATCH_MILESTONE`. Whatever the live run breaks (agent working directory, answer delivery at `turn.complete`, `gh` permissions) is fixed here.
 
+### M1.5. Workflow stages in the session's checkout
+
+Goal: every stage runs as a workflow you can watch, in the session's own checkout, so the Claude app shows the diff while the implementer works and the PR when it opens. The plugin talks in plain sentences, never JSON.
+
+Acceptance:
+- Each stage (kickoff, implement, review) is offered as one plain line naming a Workflow launch; its brief goes to a file, never into the conversation: `claude plugin test . 2>&1 | grep -F "(pass) kickoff offers the architect stage as a Workflow launch"`
+- The Workflow call of the pending stage runs with the arguments the hook kept, records its run, and a second launch is refused while it runs: `claude plugin test . 2>&1 | grep -F "(pass) the Workflow call of the pending stage records its run with the pending arguments"`
+- A stage's result is applied when its task notification arrives, the notification is swallowed and one plain line reports the outcome: `claude plugin test . 2>&1 | grep -F "(pass) the architect result creates, updates and drops sub-issues"`
+- Every sub-issue branch is created on GitHub with `gh issue develop`, linked to its issue, and checked out in the session's checkout; no worktree is created: `claude plugin test . 2>&1 | grep -F "(pass) start links the sub-issue branch on GitHub, checks it out in the session checkout and offers the implement stage"`
+- `start` refuses uncommitted changes on another branch and touches nothing: `claude plugin test . 2>&1 | grep -F "(pass) start refuses a checkout with uncommitted changes on another branch and touches nothing"`
+- The plugin's tests pass: `./scripts/pre-push`
+
+Notes: a hook cannot launch a workflow, so the session makes the Workflow call the hook offers. Checking it live: run a sub-issue in the Claude app and watch the diff pane and the PR bar.
+
 ### M2. A loop you can leave running
 
 Goal: the loop survives what happens in a real session: a restart, a dead agent, a wrong `gh` account, a missing label, and tells the person plainly what it is doing.
@@ -57,7 +71,6 @@ Acceptance:
 - A `gh` failure stops the loop with the failing command and its error, and leaves GitHub as it was before the stage: `claude plugin test . 2>&1 | grep -F "(pass) a gh failure stops the loop and names the command"`
 - A push from any worktree runs that worktree's own `scripts/pre-push` against its own files, never the main checkout's (today `core.hooksPath` holds the main checkout's absolute `scripts` path, so pushes were tested against a stale `main`): `scripts/acceptance/pre_push_own_checkout.sh`
 - An accepted sub-issue stays open until its PR merges; only the merge closes it. Today the board's built-in "Auto-close issue" workflow closes it the moment the loop moves it to Done, so a rejected PR leaves its issue closed. `/ouroboros doctor` names that workflow when it is on: `claude plugin test . 2>&1 | grep -F "(pass) doctor names the auto-close workflow that closes a sub-issue before its PR merges"`
-- Every sub-issue branch is created on GitHub, linked to its issue, before any worktree exists. `start` first looks for the issue's linked branch (`gh issue develop --list <n>`) and reuses it. Otherwise it creates one with `gh issue develop <n> --name <branch> --base <base>`, where the base is the default branch or the open stack tip. It then fetches and adds the worktree on `origin/<branch>`. The issue's Development box shows the branch while work is in progress, and the PR from it whatever its base: `claude plugin test . 2>&1 | grep -F "(pass) start links the sub-issue branch on GitHub before adding its worktree"`
 - A stacked PR never merges into a branch that has already reached the default branch. GitHub moves a stacked PR onto the default branch only when its base branch is deleted at merge, so `/ouroboros doctor` names the repository setting "Automatically delete head branches" when it is off. (Without it, #54 and #55 merged into #47's branch after that branch was already in `main`, and their work never reached `main`.): `claude plugin test . 2>&1 | grep -F "(pass) doctor names the delete-head-branches setting when it is off"`
 - The plugin's tests pass: `./scripts/pre-push`
 
