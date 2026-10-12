@@ -258,10 +258,23 @@ async function prepareWorktree($: EngineInterface, found: Board, state: LoopStat
   if (state.issue === subIssue.number && state.worktree === worktree && state.base !== undefined && (await $.fs.exists(worktree))) return { branch, worktree, base: state.base }
   await run($, ['git', '-C', root, 'fetch', 'origin'])
   const main = await defaultBranch($, root)
+  if (await refExists($, root, `refs/remotes/origin/${branch}`)) {
+    if (!(await $.fs.exists(worktree))) await addWorktreeOnPushedBranch($, root, branch, worktree)
+    return { branch, worktree, base: state.base ?? main }
+  }
   const stacked = state.tip !== undefined && (await isOpenPullRequestHead($, found.github, state.tip))
   const base = stacked ? (state.tip as string) : main
   if (!(await $.fs.exists(worktree))) await run($, ['git', '-C', root, 'worktree', 'add', '-B', branch, worktree, stacked ? base : `origin/${main}`])
   return { branch, worktree, base }
+}
+
+async function refExists($: EngineInterface, root: string, ref: string) {
+  return (await $.process.run(['git', '-C', root, 'rev-parse', '--verify', '--quiet', ref])).exitCode === 0
+}
+
+async function addWorktreeOnPushedBranch($: EngineInterface, root: string, branch: string, worktree: string) {
+  if (await refExists($, root, `refs/heads/${branch}`)) return run($, ['git', '-C', root, 'worktree', 'add', worktree, branch])
+  return run($, ['git', '-C', root, 'worktree', 'add', '--track', '-b', branch, worktree, `origin/${branch}`])
 }
 
 const stageBrief = (state: LoopState, body: string): StageBrief => ({
@@ -323,8 +336,19 @@ async function advance($: EngineInterface, state: LoopState) {
     await writeState($, cleared)
     return next.none
   }
-  return startSubIssue($, found, cleared, next.issue)
+  return startSubIssue($, found, isStarted(next.issue, found.github) ? rebuiltState(found, cleared, next.issue) : cleared, next.issue)
 }
+
+const isStarted = (subIssue: BoardSubIssue, github: GithubConfig) => subIssue.column === github.columns.in_progress || subIssue.column === github.columns.qa
+
+const rebuiltState = (found: Board, cleared: LoopState, subIssue: BoardSubIssue): LoopState => ({
+  ...cleared,
+  issue: subIssue.number,
+  title: subIssue.title,
+  stage: subIssue.column === found.github.columns.qa ? 'review' : 'implement',
+  branch: branchName(found.config.branch_prefix ?? 'work/', subIssue.number, subIssue.title),
+  round: 0,
+})
 
 async function start($: EngineInterface, state: LoopState, argument: string) {
   const number = kickoffIssueNumber(argument)
