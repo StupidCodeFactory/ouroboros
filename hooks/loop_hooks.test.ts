@@ -36,8 +36,9 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 })
 
 type Listed = { id: string; description: string; type: string; status: string }
+type Failing = { argv: string[]; stderr: string }
 
-const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = []) => {
+const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], failing?: Failing) => {
   const disk = new Map(Object.entries(files))
   const byNumber = new Map(issues.map(each => [each.number, each]))
   const subIssues = [...subIssueNumbers]
@@ -116,6 +117,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   }
   on('process.run', (_, e) => {
     const [tool, noun] = e.argv
+    if (failing !== undefined && failing.argv.every((arg, index) => e.argv[index] === arg)) return { value: { exitCode: 1, stdout: '', stderr: failing.stderr, isStdoutTruncated: false, isStderrTruncated: false } }
     if (e.argv.includes('--show-toplevel')) return answer(`${ROOT}\n`)
     if (e.argv.includes('symbolic-ref')) return answer('origin/main\n')
     if (tool === 'git') {
@@ -410,4 +412,21 @@ test('every stage change comments on the sub-issue', async ($, on) => {
     'Ouroboros: Done, PR #99 opened from `work/11-page-list` into main; the merge closes this issue',
   ])
   expect(writes.filter(write => write.startsWith('comment') || write.startsWith('pr'))).toEqual([...Array(5).fill('comment #11'), 'pr work/11-page-list into main', 'comment #11'])
+})
+
+test('a gh failure stops the loop and names the command', async ($, on) => {
+  const stderr = 'GraphQL: No commits between main and work/11-page-list'
+  const { disk, byNumber, launches, submitted } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' })], [11], [], [], { argv: ['gh', 'pr', 'create'], stderr })
+
+  await answer($, ALL_PASS)
+
+  expect(byNumber.get(11)?.body).toContain('- [ ] it lists')
+  expect(byNumber.get(11)?.body).toContain('- [ ] it filters')
+  expect(byNumber.get(11)).toMatchObject({ column: 'QA', comments: [] })
+  expect(stateOf(disk).stage).toBeUndefined()
+  expect(launches).toEqual([])
+  expect(submitted).toHaveLength(1)
+  expect(submitted[0]).toStartWith('ouroboros: stopped: `gh pr create -R acme/shop --base main --head work/11-page-list --title \'Page list\' --body-file -` failed: ')
+  expect(submitted[0]).toContain(stderr)
+  expect(submitted[0]).toEndWith('; GitHub is back as it was before the stage')
 })

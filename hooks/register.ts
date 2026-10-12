@@ -6,15 +6,19 @@ import {
   addLabelCommand,
   addToBoardCommand,
   boardIdsOf,
+  closePullRequestCommand,
   commentCommand,
   createSubIssueCommand,
   creationOrder,
+  deleteCommentCommand,
   dropCommand,
   editIssueCommand,
   githubConfigOf,
   issueOfPosition,
   linkSubIssueCommand,
   pullRequestCommand,
+  removeLabelCommand,
+  shellCommand,
 } from './github/gh_commands'
 import type { BoardIds, Column, GhCommand, GithubConfig, GithubSettings } from './github/gh_commands'
 import { setColumnCommand } from './github/gh_commands'
@@ -57,15 +61,52 @@ const OUROBOROS_COMMAND = {
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean)
 
-const loudly = (error: unknown) => `ouroboros: ${error instanceof Error ? error.message : String(error)}`
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+const loudly = (error: unknown) => `ouroboros: ${messageOf(error)}`
 
 async function run($: EngineInterface, argv: string[], stdin?: string) {
   const { exitCode, stdout, stderr } = await $.process.run(argv, stdin === undefined ? undefined : { stdin })
-  if (exitCode !== 0) throw new Error(`${argv.slice(0, 3).join(' ')} failed: ${stderr.trim() || stdout.trim()}`)
+  if (exitCode !== 0) throw new Error(`\`${shellCommand(argv)}\` failed: ${stderr.trim() || stdout.trim()}`)
   return stdout.trim()
 }
 
 const gh = ($: EngineInterface, command: GhCommand) => run($, command.argv, command.stdin)
+
+let stageInverses: GhCommand[] = []
+
+const undoWith = (inverse: GhCommand | undefined) => {
+  if (inverse !== undefined) stageInverses.push(inverse)
+}
+
+async function rollBack($: EngineInterface, inverses: GhCommand[]) {
+  const failures: string[] = []
+  for (const inverse of [...inverses].reverse()) await gh($, inverse).catch(error => failures.push(messageOf(error)))
+  return failures
+}
+
+async function undoingOnFailure($: EngineInterface, stage: () => Promise<string>) {
+  stageInverses = []
+  try {
+    return await stage()
+  } catch (error) {
+    const failures = await rollBack($, stageInverses)
+    await writeState($, { ...(await readState($)), stage: undefined, agent: undefined, label: undefined })
+    const restored = failures.length === 0 ? 'GitHub is back as it was before the stage' : `undoing the stage also failed: ${failures.join('; ')}`
+    throw new Error(`stopped: ${messageOf(error)}; ${restored}`)
+  } finally {
+    stageInverses = []
+  }
+}
+
+async function editIssue($: EngineInterface, repo: string, previous: { number: number; title: string; body: string }, title: string, body: string) {
+  undoWith(editIssueCommand(repo, previous.number, previous.title, previous.body))
+  await gh($, editIssueCommand(repo, previous.number, title, body))
+}
+
+async function comment($: EngineInterface, repo: string, number: number, text: string) {
+  undoWith(deleteCommentCommand(repo, await gh($, commentCommand(repo, number, text))))
+}
 
 async function repositoryRoot($: EngineInterface) {
   const { stdout } = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
@@ -136,10 +177,14 @@ async function readSubIssues($: EngineInterface, github: GithubConfig, milestone
 
 const issueUrl = (github: GithubConfig, number: number) => `https://github.com/${github.repo}/issues/${number}`
 
-async function moveToColumn($: EngineInterface, { github, ids }: Board, number: number, column: Column, comment?: string) {
+const columnNamed = (github: GithubConfig, name: string | undefined) => (Object.entries(github.columns) as Array<[Column, string]>).find(([, each]) => each === name)?.[0]
+
+async function moveToColumn($: EngineInterface, { github, ids }: Board, number: number, column: Column, note?: string) {
+  const previous = columnNamed(github, await issueColumn($, github, number))
   const itemId = await gh($, addToBoardCommand(ownerOf(github), ids, issueUrl(github, number)))
+  if (previous !== undefined) undoWith(setColumnCommand(ids, itemId, previous))
   await gh($, setColumnCommand(ids, itemId, column))
-  if (comment !== undefined) await gh($, commentCommand(github.repo ?? '', number, comment))
+  if (note !== undefined) await comment($, github.repo ?? '', number, note)
 }
 
 const stageDetail = (state: LoopState, round: number, pullRequest?: string) => ({ branch: state.branch as string, base: state.base as string, round, pullRequest })
@@ -211,7 +256,7 @@ async function applyKickoffChanges($: EngineInterface, found: Board, milestone: 
   }
   for (const number of changes.update) {
     const task = tasks.find(candidate => candidate.issue === number) as PlannedTask
-    await gh($, editIssueCommand(github.repo ?? '', number, task.title, bodyOf(task)))
+    await editIssue($, github.repo ?? '', await readIssue($, github, number), task.title, bodyOf(task))
   }
   for (const number of changes.drop) await gh($, dropCommand(github.repo ?? '', number))
   for (const number of [...created.values(), ...changes.update, ...changes.unchanged]) await moveToColumn($, found, number, 'planned')
@@ -219,8 +264,8 @@ async function applyKickoffChanges($: EngineInterface, found: Board, milestone: 
 }
 
 async function writeMilestoneBody($: EngineInterface, github: GithubConfig, number: number, body: MilestoneBody) {
-  const { title } = await readIssue($, github, number)
-  await gh($, editIssueCommand(github.repo ?? '', number, title, renderMilestoneBody(body)))
+  const previous = await readIssue($, github, number)
+  await editIssue($, github.repo ?? '', previous, previous.title, renderMilestoneBody(body))
 }
 
 async function applyKickoff($: EngineInterface, milestone: number, result: Record<string, unknown> | undefined) {
@@ -237,9 +282,10 @@ async function applyKickoff($: EngineInterface, milestone: number, result: Recor
   return `${kickoffAnswer(milestone, applied)}. Next: /ouroboros start ${milestone}`
 }
 
-async function escalate($: EngineInterface, found: Board, state: LoopState, number: number, comment: string) {
+async function escalate($: EngineInterface, found: Board, state: LoopState, number: number, text: string) {
+  undoWith(removeLabelCommand(found.github.repo ?? '', number, found.github.labels.needs_owner))
   await gh($, addLabelCommand(found.github.repo ?? '', number, found.github.labels.needs_owner))
-  await gh($, commentCommand(found.github.repo ?? '', number, comment))
+  await comment($, found.github.repo ?? '', number, text)
   await writeState($, { ...state, stage: undefined, agent: undefined, label: undefined, issue: number })
   return `#${number} needs you: see its comment, then remove ${found.github.labels.needs_owner} and run /ouroboros start ${state.milestone}`
 }
@@ -339,8 +385,8 @@ async function stop($: EngineInterface, state: LoopState) {
 async function runCommand($: EngineInterface, args: string) {
   const [head = '', ...rest] = words(args)
   const state = await readState($)
-  if (head === 'kickoff') return kickoff($, state, rest.join(' '))
-  if (head === 'start') return start($, state, rest.join(' '))
+  if (head === 'kickoff') return undoingOnFailure($, () => kickoff($, state, rest.join(' ')))
+  if (head === 'start') return undoingOnFailure($, () => start($, state, rest.join(' ')))
   if (head === 'status') return statusText(state)
   if (head === 'stop') return stop($, state)
   return OUROBOROS_COMMAND.description
@@ -350,6 +396,7 @@ async function finishSubIssue($: EngineInterface, found: Board, state: LoopState
   const branch = state.branch as string
   await run($, ['git', '-C', state.worktree as string, 'push', '-u', 'origin', branch])
   const pullRequest = await gh($, pullRequestCommand(found.github.repo ?? '', { base: state.base as string, head: branch, title: state.title ?? branch, number: state.issue as number }))
+  undoWith(closePullRequestCommand(found.github.repo ?? '', pullRequest))
   await moveToColumn($, found, state.issue as number, 'done', stageComment('done', stageDetail(state, state.round, pullRequest)))
   await run($, ['git', '-C', await repositoryRoot($), 'worktree', 'remove', '--force', state.worktree as string]).catch(() => '')
   return { ...state, tip: branch }
@@ -367,14 +414,14 @@ async function onReviewed($: EngineInterface, found: Board, state: LoopState, re
   const number = state.issue as number
   const issue = await readIssue($, found.github, number)
   const outcome = reviewOutcome(issue.body, { items: result.items ?? [], defects: result.defects ?? [] })
-  if (outcome.body !== issue.body) await gh($, editIssueCommand(found.github.repo ?? '', number, issue.title, outcome.body))
+  if (outcome.body !== issue.body) await editIssue($, found.github.repo ?? '', issue, issue.title, outcome.body)
   const round = state.round + 1
   if (outcome.accepted) {
     const finished = await finishSubIssue($, found, { ...state, round })
     const next = await advance($, { ...finished, stage: undefined, agent: undefined, label: undefined })
     return `#${number} Done, PR opened from ${state.branch} into ${state.base}. ${next}`
   }
-  await gh($, commentCommand(found.github.repo ?? '', number, outcome.comment))
+  await comment($, found.github.repo ?? '', number, outcome.comment)
   if (round >= MAX_REVIEW_ROUNDS) {
     await moveToColumn($, found, number, 'in_progress')
     return escalate($, found, { ...state, round }, number, escalationComment(`${MAX_REVIEW_ROUNDS} review rounds ended without acceptance. Decide how to proceed: clarify the plan or checklist, or fix it by hand.`))
@@ -412,7 +459,7 @@ async function report($: EngineInterface, note: string) {
 async function onAgentAnswer($: EngineInterface, agentId: string, answer: string) {
   const state = await readState($)
   if (!(await isLoopAgent($, state, agentId))) return
-  await report($, await conductAnswer($, state, answer).catch(loudly))
+  await report($, await undoingOnFailure($, () => conductAnswer($, state, answer)).catch(messageOf))
 }
 
 export const register: Register = on => {
