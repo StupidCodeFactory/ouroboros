@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { boardProblems, doctorAnswer, labelProblems, prdProblems, pushProblems, scopeProblems } from './doctor'
+import { autoCloseProblems, boardProblems, doctorAnswer, labelProblems, prdProblems, pushProblems, scopeProblems } from './doctor'
 import { githubConfigOf } from './gh_commands'
 
 const USER = (scopes: string) => `HTTP/2.0 200 OK\nX-Oauth-Scopes: ${scopes}\n\n{"login":"octo"}`
@@ -37,4 +37,10 @@ test('label and PRD problems', () => {
 test('the answer is ready or lists every problem', () => {
   expect(doctorAnswer([])).toBe('ouroboros doctor: ready')
   expect(doctorAnswer(['a', 'b'])).toBe('ouroboros doctor found 2 problems:\n- a\n- b')
+})
+
+test('an enabled Auto-close issue workflow is named', () => {
+  const workflows = (enabled: boolean) => JSON.stringify({ data: { node: { workflows: { nodes: [{ name: 'Auto-close issue', enabled }] } } } })
+  expect(autoCloseProblems('Shop board', workflows(false))).toEqual([])
+  expect(autoCloseProblems('Shop board', workflows(true))).toHaveLength(1)
 })
