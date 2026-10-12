@@ -240,11 +240,11 @@ async function milestonePrdSection($: EngineInterface, config: Config, title: st
   return 'section' in found ? found : { refusal: `no heading of ${prd} matches "${title}"; headings: ${found.headings.join(', ')}` }
 }
 
-const busy = (state: LoopState) => (state.run === undefined ? undefined : `ouroboros is running ${state.label}; wait for its result, or /ouroboros stop`)
+const busy = (state: LoopState) => (state.run === undefined ? undefined : `ouroboros is running ${state.label}; wait for its result, or \`/ouroboros stop\``)
 
 async function kickoff($: EngineInterface, state: LoopState, argument: string) {
   const number = kickoffIssueNumber(argument)
-  if (number === undefined) return 'usage: /ouroboros kickoff <milestone-issue>'
+  if (number === undefined) return 'usage: `/ouroboros kickoff <milestone-issue>`'
   const refusal = busy(state)
   if (refusal !== undefined) return refusal
   const found = await board($)
@@ -299,7 +299,7 @@ async function applyKickoff($: EngineInterface, milestone: number, result: Recor
   if ('rejected' in changes) return `kickoff #${milestone} rejected, nothing applied: ${changes.rejected}`
   const applied = await applyKickoffChanges($, found, milestone, planned.tasks, changes)
   await writeMilestoneBody($, found.github, milestone, planned.milestone)
-  return `${kickoffAnswer(milestone, applied)}. Next: /ouroboros start ${milestone}`
+  return `${kickoffAnswer(milestone, applied)}. Next: \`/ouroboros start ${milestone}\``
 }
 
 async function escalate($: EngineInterface, found: Board, state: LoopState, number: number, text: string) {
@@ -307,7 +307,7 @@ async function escalate($: EngineInterface, found: Board, state: LoopState, numb
   await gh($, addLabelCommand(found.github.repo ?? '', number, found.github.labels.needs_owner))
   await comment($, found.github.repo ?? '', number, text)
   await writeState($, { ...withoutStage(state), issue: number })
-  return `#${number} needs you: see its comment, then remove ${found.github.labels.needs_owner} and run /ouroboros start ${state.milestone}`
+  return `#${number} needs you: see its comment, then remove ${found.github.labels.needs_owner} and run \`/ouroboros start ${state.milestone}\``
 }
 
 async function defaultBranch($: EngineInterface, root: string) {
@@ -329,7 +329,7 @@ async function stackBase($: EngineInterface, found: Board, state: LoopState, sub
 async function uncommittedRefusal($: EngineInterface, root: string, branch: string, milestone: number) {
   const current = await run($, ['git', '-C', root, 'branch', '--show-current'])
   if (current === branch || (await run($, ['git', '-C', root, 'status', '--porcelain'])) === '') return undefined
-  return `the session checkout has uncommitted changes on ${current}: commit or stash them, then /ouroboros start ${milestone}`
+  return `the session checkout has uncommitted changes on ${current}: commit or stash them, then \`/ouroboros start ${milestone}\``
 }
 
 async function checkOutSubIssueBranch($: EngineInterface, found: Board, state: LoopState, subIssue: BoardSubIssue) {
@@ -365,7 +365,7 @@ async function launchStage($: EngineInterface, state: LoopState, stage: 'impleme
 }
 
 async function startSubIssue($: EngineInterface, found: Board, state: LoopState, subIssue: BoardSubIssue) {
-  if (subIssue.labels.includes(found.github.labels.needs_owner)) return `#${subIssue.number} still carries ${found.github.labels.needs_owner}: answer its comment, remove the label, then /ouroboros start ${state.milestone}`
+  if (subIssue.labels.includes(found.github.labels.needs_owner)) return `#${subIssue.number} still carries ${found.github.labels.needs_owner}: answer its comment, remove the label, then \`/ouroboros start ${state.milestone}\``
   const unready = readinessComment(subIssue.body)
   if (unready !== undefined) return escalate($, found, state, subIssue.number, unready)
   if (isInFlight(state, subIssue, found.github)) return resumeSubIssue($, found, state, subIssue)
@@ -424,7 +424,7 @@ const rebuiltState = (found: Board, cleared: LoopState, subIssue: BoardSubIssue)
 
 async function start($: EngineInterface, state: LoopState, argument: string) {
   const number = kickoffIssueNumber(argument)
-  if (number === undefined) return 'usage: /ouroboros start <milestone-issue>'
+  if (number === undefined) return 'usage: `/ouroboros start <milestone-issue>`'
   const refusal = busy(state)
   if (refusal !== undefined) return refusal
   return advance($, state.milestone === number ? state : { ...IDLE, milestone: number })
@@ -438,7 +438,7 @@ const statusText = (state: LoopState) => {
 
 async function stop($: EngineInterface, state: LoopState) {
   await writeState($, withoutStage(state))
-  return 'stopped: a running stage workflow keeps going but its result is ignored; /ouroboros start <milestone> resumes'
+  return 'stopped: a running stage workflow keeps going but its result is ignored; `/ouroboros start <milestone>` resumes'
 }
 
 const problemsOf = (check: Promise<string[]>) => check.catch(error => [error instanceof Error ? error.message : String(error)])
@@ -546,13 +546,6 @@ async function conductResult($: EngineInterface, state: LoopState, result: Recor
   return onReviewed($, found, settled, result === undefined ? { items: [], defects: ['The reviewer ended without a readable answer.'] } : (result as StageResult))
 }
 
-const WORTH_SUBMITTING = /Done: |needs you|finished|no sub-issue|failed|rejected|kickoff #\d+:|^ouroboros|^no |^the session/
-
-async function report($: EngineInterface, note: string) {
-  $.ui.toast(`ouroboros: ${note}`)
-  if (WORTH_SUBMITTING.test(note)) submitWhenIdle($, `ouroboros: ${note}`)
-}
-
 const resultOf = (outputFileText: string): Record<string, unknown> | undefined => {
   try {
     const { result } = JSON.parse(outputFileText) as { result?: unknown }
@@ -573,16 +566,14 @@ async function onStageNotification($: EngineInterface, notification: string) {
   const state = await readState($)
   if (state.run === undefined || !mentionsTask(notification, state.run)) return undefined
   const result = await stageResult($, notification)
-  const note = await undoingOnFailure($, () => conductResult($, state, result)).catch(messageOf)
-  await report($, note)
-  return `ouroboros: ${note}`
+  return `ouroboros: ${await undoingOnFailure($, () => conductResult($, state, result)).catch(messageOf)}`
 }
 
 async function launchPendingStage($: EngineInterface, call: () => Promise<unknown>) {
   const state = await readState($)
   const refusal = busy(state)
   if (refusal !== undefined) return { deny: refusal }
-  if (state.pending === undefined) return { deny: 'no ouroboros stage is waiting to launch: /ouroboros start <milestone-issue>' }
+  if (state.pending === undefined) return { deny: 'no ouroboros stage is waiting to launch: `/ouroboros start <milestone-issue>`' }
   const launched = (await call()) as { result?: { taskId?: string } }
   const taskId = launched.result?.taskId
   if (taskId !== undefined) await writeState($, { ...state, pending: undefined, run: taskId })
@@ -614,13 +605,13 @@ export const register: Register = on => {
   on('session.receive', { origin: { kind: 'task-notification' } }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const note = await onStageNotification($, e.text)
-    return note === undefined ? next(e) : { consumed: note }
+    return next(note === undefined ? e : { ...e, text: note })
   })
 
   on('prompt.submit', async ($, e, next) => {
     if (e.origin?.kind !== 'task-notification') return next(e)
     const note = await onStageNotification($, e.text)
-    return note === undefined ? next(e) : { drop: note }
+    return next(note === undefined ? e : { ...e, text: note })
   })
 
   on('prompt.context', async ($, e, next) => {
