@@ -25,8 +25,13 @@ const blockersOf = (subIssue: BoardSubIssue, all: BoardSubIssue[], columns: Reco
 const waitingLine = (subIssue: BoardSubIssue, all: BoardSubIssue[], columns: Record<Column, string>) =>
   `#${subIssue.number} waits on ${blockersOf(subIssue, all, columns).map(number => `#${number}`).join(', ')}`
 
+const openIn = (subIssues: BoardSubIssue[], ...columnNames: string[]) =>
+  subIssues.filter(subIssue => subIssue.state === 'open' && columnNames.includes(subIssue.column ?? '')).sort((left, right) => left.number - right.number)
+
 export const nextSubIssue = (subIssues: BoardSubIssue[], columns: Record<Column, string>): { issue: BoardSubIssue } | { none: string } | { finished: true } => {
-  const planned = subIssues.filter(subIssue => subIssue.state === 'open' && subIssue.column === columns.planned).sort((left, right) => left.number - right.number)
+  const started = openIn(subIssues, columns.in_progress, columns.qa)[0]
+  if (started !== undefined) return { issue: started }
+  const planned = openIn(subIssues, columns.planned)
   const ready = planned.find(subIssue => blockersOf(subIssue, subIssues, columns).length === 0)
   if (ready !== undefined) return { issue: ready }
   if (subIssues.every(subIssue => isFinished(subIssue, columns))) return { finished: true }
