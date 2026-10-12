@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { boardProblems, doctorAnswer, labelProblems, loginOf, prdProblems, pushProblems, scopeProblems } from './github/doctor'
+import { WORKFLOWS_QUERY, autoCloseProblems, boardProblems, doctorAnswer, labelProblems, loginOf, prdProblems, pushProblems, scopeProblems } from './github/doctor'
 import { milestoneGaps, renderMilestoneBody } from './github/contract'
 import type { MilestoneBody } from './github/contract'
 import {
@@ -380,7 +380,10 @@ const problemsOf = (check: Promise<string[]>) => check.catch(error => [error ins
 async function boardCheck($: EngineInterface, github: GithubConfig) {
   if (github.project === undefined) return [`ouroboros needs github.project in ${CONFIG_PATH}`]
   const { projects, fields } = await boardAnswers($, github)
-  return boardProblems(projects, fields, github)
+  const project = projects.projects.find((candidate: { title: string }) => candidate.title === github.project)
+  if (project === undefined) return boardProblems(projects, fields, github)
+  const workflows = run($, ['gh', 'api', 'graphql', '-f', `query=${WORKFLOWS_QUERY}`, '-F', `id=${project.id}`])
+  return [...boardProblems(projects, fields, github), ...(await problemsOf(workflows.then(answer => autoCloseProblems(github.project as string, answer))))]
 }
 
 async function prdCheck($: EngineInterface, config: Config) {

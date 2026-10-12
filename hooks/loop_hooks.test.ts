@@ -36,7 +36,7 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 })
 
 type Listed = { id: string; description: string; type: string; status: string }
-type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[]; failing?: string[] }
+type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[]; failing?: string[]; enabledWorkflows?: string[] }
 const ALL_COLUMNS = ['Milestones', 'Planned', 'In Progress', 'QA', 'Done']
 
 const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = [], setup: Setup = {}) => {
@@ -86,6 +86,10 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
     const path = argv.find(arg => arg.startsWith('repos/')) ?? ''
     if (argv.includes('user')) return `HTTP/2.0 200 OK\nX-Oauth-Scopes: ${setup.scopes ?? 'repo, project, read:org'}\n\n{"login":"octo"}`
     if (path === `repos/${REPO}`) return String(setup.push ?? true)
+    if (argv.includes('graphql')) {
+      const nodes = ['Auto-close issue', 'Item added to project'].map(name => ({ name, enabled: (setup.enabledWorkflows ?? []).includes(name) }))
+      return JSON.stringify({ data: { node: { workflows: { nodes } } } })
+    }
     if (argv.includes('POST')) {
       const id = Number((argv.find(arg => arg.startsWith('sub_issue_id=')) ?? '').split('=')[1])
       const linked = [...byNumber.values()].find(each => each.id === id)
@@ -464,6 +468,25 @@ test('doctor still checks the token and the PRD when gh cannot name the repo', a
   expect(answered).toContain('- gh repo view failed: failed')
   expect(answered).toContain('- the gh token of octo lacks the project scope: run gh auth refresh -s project')
   expect(answered).toContain('- no PRD at docs/prd.md')
+})
+
+test('doctor names the auto-close workflow that closes a sub-issue before its PR merges', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [], [], [], [], { enabledWorkflows: ['Auto-close issue'] })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 1 problems:')
+  expect(answered).toContain('- the "Auto-close issue" workflow of project "Shop board" closes a sub-issue when the loop moves it to Done, before its PR merges: turn it off under the project\'s Workflows')
+})
+
+test('doctor still names missing columns when gh cannot read the board workflows', async ($, on) => {
+  world(on, BASE_FILES, [MILESTONE], [], [], [], [], { columns: ALL_COLUMNS.filter(name => name !== 'QA'), failing: ['gh api graphql'] })
+
+  const answered = (await run($, 'doctor')).text
+
+  expect(answered).toStartWith('ouroboros doctor found 2 problems:')
+  expect(answered).toContain('- gh api graphql failed: failed')
+  expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
 })
 
 test('doctor says the setup is ready', async ($, on) => {

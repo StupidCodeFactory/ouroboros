@@ -32,6 +32,18 @@ export const boardProblems = (projects: ProjectList, fields: FieldList, github: 
   return absentColumns(fields, github).map(name => `missing column "${name}" of field "${github.status_field}" on project "${github.project}"`)
 }
 
+const AUTO_CLOSE = 'Auto-close issue'
+
+export const WORKFLOWS_QUERY = 'query($id: ID!) { node(id: $id) { ... on ProjectV2 { workflows(first: 50) { nodes { name enabled } } } } }'
+
+type WorkflowsAnswer = { data?: { node?: { workflows?: { nodes?: Array<{ name: string; enabled: boolean }> } } } }
+
+export const autoCloseProblems = (project: string, workflowsAnswer: string) => {
+  const nodes = (JSON.parse(workflowsAnswer || '{}') as WorkflowsAnswer).data?.node?.workflows?.nodes ?? []
+  if (!nodes.some(workflow => workflow.name === AUTO_CLOSE && workflow.enabled)) return []
+  return [`the "${AUTO_CLOSE}" workflow of project "${project}" closes a sub-issue when the loop moves it to Done, before its PR merges: turn it off under the project's Workflows, so only the PR's Closes #n closes it on merge`]
+}
+
 export const labelProblems = (repo: string, label: string, labelsAnswer: string) =>
   (JSON.parse(labelsAnswer || '[]') as Array<{ name: string }>).some(each => each.name === label) ? [] : [`missing label "${label}" in ${repo}: gh label create ${label} -R ${repo}`]
 

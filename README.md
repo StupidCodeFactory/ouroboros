@@ -18,6 +18,7 @@ The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `
 ## Setup
 
 1. Create a GitHub project with a single-select `Status` field holding the columns `Milestones`, `Planned`, `In Progress`, `QA` and `Done`.
+   Under the project's Workflows, turn off "Auto-close issue": the loop moves a sub-issue to Done before its PR merges, and only the PR's `Closes #n` should close it.
 2. Create the label `needs-owner` in the repository.
 3. Write a PRD with one heading per milestone, for example `### M1. Sign-in`.
 4. Open one issue per milestone with that heading as its title, and put it in the Milestones column.
@@ -38,7 +39,7 @@ The hooks are function hooks: set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` in the `
 
 Everything but `github.project` has the default shown. `branch_prefix` (default `work/`) sets the prefix of task branches. `gh` must be logged in as an account that can edit the repository's issues and the project.
 
-Then run `/ouroboros doctor`. It checks the `gh` account's `repo` and `project` scopes and push rights, the board, its status field and columns, the `needs-owner` label and the PRD, and names every problem in one answer, or says the setup is ready.
+Then run `/ouroboros doctor`. It checks the `gh` account's `repo` and `project` scopes and push rights, the board, its status field, columns and "Auto-close issue" workflow, the `needs-owner` label and the PRD, and names every problem in one answer, or says the setup is ready.
 
 ## Use
 
