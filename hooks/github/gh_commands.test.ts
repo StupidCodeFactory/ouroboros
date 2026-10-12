@@ -14,7 +14,11 @@ import {
   issueOfPosition,
   linkSubIssueCommand,
   pullRequestCommand,
+  closePullRequestCommand,
+  deleteCommentCommand,
+  removeLabelCommand,
   setColumnCommand,
+  shellCommand,
 } from './gh_commands'
 import type { PlannedTask } from './kickoff_plan'
 
@@ -141,4 +145,21 @@ test('the pull request targets its base, heads the task branch and closes the su
     argv: ['gh', 'pr', 'create', '-R', REPO, '--base', 'main', '--head', 'work/12-page-list', '--title', 'Page list', '--body-file', '-'],
     stdin: 'Closes #12\n',
   })
+})
+
+test('a failing command reads back as one shell line', () => {
+  expect(shellCommand(['gh', 'pr', 'create', '--title', "Owner's page", '--body-file', '-', ''])).toBe("gh pr create --title 'Owner'\\''s page' --body-file - ''")
+})
+
+test('undoing a label removes it', () => {
+  expect(removeLabelCommand(REPO, 12, 'needs-owner')).toEqual({ argv: ['gh', 'issue', 'edit', '12', '-R', REPO, '--remove-label', 'needs-owner'] })
+})
+
+test('undoing a comment deletes it by the id in its url', () => {
+  expect(deleteCommentCommand(REPO, 'https://github.com/acme/shop/issues/12#issuecomment-4567')).toEqual({ argv: ['gh', 'api', '-X', 'DELETE', 'repos/acme/shop/issues/comments/4567'] })
+  expect(deleteCommentCommand(REPO, '')).toBeUndefined()
+})
+
+test('undoing a pull request closes it and keeps its branch', () => {
+  expect(closePullRequestCommand(REPO, 'https://github.com/acme/shop/pull/99')).toEqual({ argv: ['gh', 'pr', 'close', 'https://github.com/acme/shop/pull/99', '-R', REPO, '--delete-branch=false'] })
 })

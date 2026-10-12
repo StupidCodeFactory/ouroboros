@@ -36,7 +36,7 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 })
 
 type Listed = { id: string; description: string; type: string; status: string }
-type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[]; failing?: string[]; enabledWorkflows?: string[] }
+type Setup = { scopes?: string; push?: boolean; columns?: string[]; labels?: string[]; failing?: string[]; stderr?: string; enabledWorkflows?: string[] }
 const ALL_COLUMNS = ['Milestones', 'Planned', 'In Progress', 'QA', 'Done']
 
 const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = [], setup: Setup = {}) => {
@@ -48,7 +48,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
   const launches: Launch[] = []
   const submitted: string[] = []
   const fileAt = (path: string) => [...disk.entries()].find(([name]) => path.endsWith(name))?.[1]
-  const answer = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: exitCode === 0 ? '' : 'failed', isStdoutTruncated: false, isStderrTruncated: false } })
+  const answer = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: exitCode === 0 ? '' : setup.stderr ?? 'failed', isStdoutTruncated: false, isStderrTruncated: false } })
   const flag = (argv: readonly string[], name: string) => argv[argv.indexOf(name) + 1] ?? ''
   const ghIssue = (argv: readonly string[], stdin: string | undefined) => {
     const [, , verb, number] = argv
@@ -474,7 +474,7 @@ test('doctor still checks push rights when gh cannot read the account', async ($
   const answered = (await run($, 'doctor')).text
 
   expect(answered).toStartWith('ouroboros doctor found 2 problems:')
-  expect(answered).toContain('- gh api -i failed: failed')
+  expect(answered).toContain('- `gh api -i user` failed: failed')
   expect(answered).toContain('- the gh account cannot push to acme/shop')
 })
 
@@ -485,7 +485,7 @@ test('doctor still checks the token and the PRD when gh cannot name the repo', a
   const answered = (await run($, 'doctor')).text
 
   expect(answered).toStartWith('ouroboros doctor found 3 problems:')
-  expect(answered).toContain('- gh repo view failed: failed')
+  expect(answered).toContain('- `gh repo view --json nameWithOwner --jq .nameWithOwner` failed: failed')
   expect(answered).toContain('- the gh token of octo lacks the project scope: run gh auth refresh -s project')
   expect(answered).toContain('- no PRD at docs/prd.md')
 })
@@ -505,7 +505,7 @@ test('doctor still names missing columns when gh cannot read the board workflows
   const answered = (await run($, 'doctor')).text
 
   expect(answered).toStartWith('ouroboros doctor found 2 problems:')
-  expect(answered).toContain('- gh api graphql failed: failed')
+  expect(answered).toContain('- `gh api graphql -f')
   expect(answered).toContain('- missing column "QA" of field "Status" on project "Shop board"')
 })
 
@@ -513,4 +513,21 @@ test('doctor says the setup is ready', async ($, on) => {
   world(on, BASE_FILES, [MILESTONE], [])
 
   expect((await run($, 'doctor')).text).toBe('ouroboros doctor: ready')
+})
+
+test('a gh failure stops the loop and names the command', async ($, on) => {
+  const stderr = 'GraphQL: No commits between main and work/11-page-list'
+  const { disk, byNumber, launches, submitted } = world(on, working('review'), [MILESTONE, issue(11, 'Page list', { column: 'QA' })], [11], [], [], [], { failing: ['gh pr create'], stderr })
+
+  await answer($, ALL_PASS)
+
+  expect(byNumber.get(11)?.body).toContain('- [ ] it lists')
+  expect(byNumber.get(11)?.body).toContain('- [ ] it filters')
+  expect(byNumber.get(11)).toMatchObject({ column: 'QA', comments: [] })
+  expect(stateOf(disk).stage).toBeUndefined()
+  expect(launches).toEqual([])
+  expect(submitted).toHaveLength(1)
+  expect(submitted[0]).toStartWith('ouroboros: stopped: `gh pr create -R acme/shop --base main --head work/11-page-list --title \'Page list\' --body-file -` failed: ')
+  expect(submitted[0]).toContain(stderr)
+  expect(submitted[0]).toEndWith('; GitHub is back as it was before the stage')
 })
