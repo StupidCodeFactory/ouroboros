@@ -34,11 +34,17 @@ test('the next sub-issue is the lowest-numbered planned one whose dependencies a
     subIssue(12, 'Planned', { body: dependingOn(11) }),
     subIssue(11, 'Done'),
     subIssue(13, 'Planned', { body: dependingOn(15) }),
-    subIssue(15, 'In Progress'),
+    subIssue(15, undefined),
     subIssue(10, undefined, { state: 'closed' }),
   ]
 
   expect(nextSubIssue(subIssues, COLUMNS)).toEqual({ issue: subIssues[1] })
+})
+
+test('nextSubIssue prefers an open In Progress or QA sub-issue over Planned', () => {
+  const subIssues = [subIssue(10, 'Planned'), subIssue(13, 'In Progress'), subIssue(12, 'QA'), subIssue(11, 'QA', { state: 'closed' })]
+
+  expect(nextSubIssue(subIssues, COLUMNS)).toEqual({ issue: subIssues[2] })
 })
 
 test('a closed dependency counts as met', () => {
@@ -48,7 +54,7 @@ test('a closed dependency counts as met', () => {
 })
 
 test('with nothing ready, the answer names each waiting sub-issue and its blockers', () => {
-  const subIssues = [subIssue(12, 'Planned', { body: dependingOn(15) }), subIssue(15, 'In Progress'), subIssue(11, 'Done')]
+  const subIssues = [subIssue(12, 'Planned', { body: dependingOn(15) }), subIssue(15, undefined), subIssue(11, 'Done')]
 
   expect(nextSubIssue(subIssues, COLUMNS)).toEqual({ none: 'no sub-issue is ready: #12 waits on #15' })
 })

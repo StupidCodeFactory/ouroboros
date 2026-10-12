@@ -37,7 +37,7 @@ const issue = (number: number, title: string, extra: Partial<Issue> = {}): Issue
 
 type Listed = { id: string; description: string; type: string; status: string }
 
-const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = []) => {
+const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueNumbers: number[], openPullRequests: string[] = [], agents: Listed[] = [], remoteBranches: string[] = []) => {
   const disk = new Map(Object.entries(files))
   const byNumber = new Map(issues.map(each => [each.number, each]))
   const subIssues = [...subIssueNumbers]
@@ -118,6 +118,7 @@ const world = (on: On, files: Record<string, string>, issues: Issue[], subIssueN
     const [tool, noun] = e.argv
     if (e.argv.includes('--show-toplevel')) return answer(`${ROOT}\n`)
     if (e.argv.includes('symbolic-ref')) return answer('origin/main\n')
+    if (e.argv.includes('rev-parse')) return answer('', remoteBranches.some(branch => e.argv.includes(`refs/remotes/origin/${branch}`)) ? 0 : 1)
     if (tool === 'git') {
       commands.push(e.argv.slice(1).filter(arg => arg !== '-C' && !arg.startsWith('/')).join(' '))
       if (e.argv.includes('worktree') && e.argv.includes('add')) disk.set(`.claude/ouroboros/worktrees/${e.argv[e.argv.length - 2]?.split('/').pop()}`, '')
@@ -390,6 +391,22 @@ test('start resumes the sub-issue in flight after a restart', async ($, on) => {
   expect(commands).toEqual([])
   expect(byNumber.get(12)).toMatchObject({ column: 'Planned', comments: [], labels: [] })
   expect(stateOf(disk)).toMatchObject({ issue: 11, stage: 'review', round: 0 })
+})
+
+test('start resumes an In Progress or QA sub-issue from the board without local state', async ($, on) => {
+  const issues = [MILESTONE, issue(11, 'Page list', { column: 'QA' }), issue(12, 'Other', { column: 'Planned' })]
+  const { disk, byNumber, commands, launches } = world(on, BASE_FILES, issues, [11, 12], [], [], ['work/11-page-list'])
+
+  const answered = await run($, 'start 3')
+
+  expect(answered.text).toBe('#11 "Page list": resumed review round 1 on work/11-page-list')
+  expect(spawned(launches)).toEqual([['ouroboros:reviewer', 'review:#11 round 1']])
+  expect(launches[0]?.prompt).toContain('Branch: work/11-page-list (based on main)')
+  expect(commands.filter(command => command.includes('-B'))).toEqual([])
+  expect(commands).toContain('worktree add --track -b work/11-page-list origin/work/11-page-list')
+  expect(byNumber.get(11)?.column).toBe('QA')
+  expect(byNumber.get(12)).toMatchObject({ column: 'Planned', comments: [], labels: [] })
+  expect(stateOf(disk)).toMatchObject({ issue: 11, stage: 'review', round: 0, branch: 'work/11-page-list', base: 'main' })
 })
 
 test('an answer from another agent is left alone', async ($, on) => {
